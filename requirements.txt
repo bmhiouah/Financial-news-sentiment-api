@@ -1,0 +1,10 @@
+openbb==3.5.0
+pydantic-settings
+transformers
+torch
+sqlalchemy
+loguru
+matplotlib
+plotly
+ipympl
+plotly
