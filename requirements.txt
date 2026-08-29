@@ -7,4 +7,4 @@ loguru
 matplotlib
 plotly
 ipympl
-plotly
+finnhub-python
