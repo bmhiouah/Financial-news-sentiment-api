@@ -67,11 +67,19 @@ class GroqSentimentScorer(SentimentScorer):
         timeout: int = 20,
         pos_threshold: Optional[float] = None,
         neg_threshold: Optional[float] = None,
+        load_env: bool = True,
     ) -> None:
-        self.api_key = os.environ.get("GROQ_API_KEY")
+        if load_env and not os.environ.get("GROQ_API_KEY"):
+            try:
+                from ..env_loader import load_project_env
+                load_project_env()
+            except Exception:
+                pass
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         if not self.api_key:
             raise RuntimeError(
-                "Groq API key not found. Set the GROQ_API_KEY environment variable."
+                "Groq API key not found. Set the GROQ_API_KEY environment variable "
+                "or add GROQ_API_KEY=... to a .env file at the project root."
             )
         self.model = model
         self.endpoint = endpoint

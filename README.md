@@ -184,17 +184,30 @@ headline (positive / negative / neutral probabilities, label, and a
 compound score in [-1, +1]). The DB stores these in dedicated
 `llm_*` columns on `news` and `finnhub_news`.
 
-Set the API key once and backfill rows that already have a FinBERT
-score but no LLM score yet:
+Set the API key once via either:
+  * environment variable:    `export GROQ_API_KEY="gsk_..."` (https://console.groq.com/keys)
+  * a `.env` file at the project root:    `GROQ_API_KEY=gsk_...`
+
+The `.env` file is auto-loaded by both `GroqSentimentScorer` and the
+`scripts/score_llm.py` entry point (no `python-dotenv` dependency). A
+`.env.example` is included as a template. The `.env` file itself is
+git-ignored.
+
+Backfill rows that already have a FinBERT score but no LLM score yet:
 
 ```bash
-export GROQ_API_KEY="gsk_..."   # https://console.groq.com/keys
-python scripts/score_llm.py             # score all pending rows
-python scripts/score_llm.py --limit 500 --delay 0.1   # cap + rate-limit
+python scripts/score_llm.py                  # score all pending rows
+python scripts/score_llm.py --limit 500     # cap the run
+python scripts/score_llm.py --delay 0.1     # rate-limit guard
+python scripts/score_llm.py --batch-size 25 # DB write granularity (default 50)
 ```
 
-`scripts/score_llm.py` is idempotent: re-running it only scores rows
-whose `llm_score` is still NULL.
+`scripts/score_llm.py` is fully idempotent: re-running only scores rows
+whose `llm_score` is still NULL. The `WHERE llm_score IS NULL` filter
+in `Repository.fetch_pending_llm` is the source of truth, so an
+interrupted run resumes cleanly from where it stopped. Successful
+rows are written in batches of `--batch-size` so a crash mid-run
+loses at most that many API calls' worth of work.
 
 The `notebooks/demo.ipynb` notebook includes a section that loads
 rows with both scores and produces a FinBERT vs LLM scatter plot,
