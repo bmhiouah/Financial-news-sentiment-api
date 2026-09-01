@@ -124,6 +124,29 @@ class Coverage:
         return self.min_date is not None and self.max_date is not None
 
 
+@dataclass
+class Equity:
+    """A tradable security used as a reference / universe entry."""
+
+    symbol: str
+    name: str = ""
+    exchange: str = ""
+    sector: str = ""
+    industry: str = ""
+    market_cap: Optional[float] = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Equity":
+        return cls(
+            symbol=(d.get("symbol") or "").upper(),
+            name=d.get("name") or d.get("company_name") or "",
+            exchange=d.get("exchange") or d.get("exchange_name") or "",
+            sector=d.get("sector") or "",
+            industry=d.get("industry") or "",
+            market_cap=d.get("market_cap"),
+        )
+
+
 def _coerce_date(value) -> str:
     """Accept date, datetime, pandas.Timestamp, or ISO string -> 'YYYY-MM-DD'."""
     if value is None:

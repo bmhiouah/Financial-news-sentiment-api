@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterable, Iterator, List, Optional
 
 from .config import SETTINGS
-from .domain import NewsItem, PriceBar, Coverage
+from .domain import NewsItem, PriceBar, Coverage, Equity
 
 
 # --------------------------------------------------------------------------- #
@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS prices (
     monthly_return REAL
 )
 """
+
+_EQUITIES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS equities (
+    symbol TEXT PRIMARY KEY,
+    name TEXT,
+    exchange TEXT,
+    sector TEXT,
+    industry TEXT,
+    market_cap REAL
+)
+"""
+
+_EQUITY_COLUMNS = ("symbol", "name", "exchange", "sector", "industry", "market_cap")
 
 _NEWS_COLUMNS = (
     "symbol", "date", "headline", "text", "source", "url",
@@ -118,6 +131,11 @@ class Repository:
             cur.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_symbol_date "
                 "ON prices(symbol, date)"
+            )
+            cur.execute(_EQUITIES_SCHEMA)
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_equities_exchange "
+                "ON equities(exchange)"
             )
             # Backfill returns columns on legacy DBs
             cols = {r[1] for r in cur.execute("PRAGMA table_info(prices)").fetchall()}
@@ -359,6 +377,42 @@ class Repository:
             cov.n_rows = n
         return cov
 
+    # ---- equities ----
+
+    def save_equities(self, items: Iterable[Equity]) -> int:
+        sql = (
+            f"INSERT OR IGNORE INTO equities "
+            f"({', '.join(_EQUITY_COLUMNS)}) "
+            f"VALUES ({', '.join(['?'] * len(_EQUITY_COLUMNS))})"
+        )
+        rows = [
+            (
+                i.symbol, i.name, i.exchange, i.sector, i.industry, i.market_cap,
+            )
+            for i in items
+        ]
+        with self._conn() as conn:
+            cur = conn.cursor()
+            cur.executemany(sql, rows)
+            return cur.rowcount
+
+    def fetch_equities(self) -> List[Equity]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_csv(_EQUITY_COLUMNS)} FROM equities ORDER BY symbol"
+            ).fetchall()
+        return [
+            Equity(
+                symbol=r[0], name=r[1] or "", exchange=r[2] or "",
+                sector=r[3] or "", industry=r[4] or "", market_cap=r[5],
+            )
+            for r in rows
+        ]
+
+    def equity_count(self) -> int:
+        with self._conn() as conn:
+            return conn.execute("SELECT COUNT(*) FROM equities").fetchone()[0]
+
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -383,4 +437,11 @@ def _row_to_price(row) -> PriceBar:
         symbol=row[0], date=row[1], open=row[2], high=row[3],
         low=row[4], close=row[5], volume=row[6],
         daily_return=row[7], weekly_return=row[8], monthly_return=row[9],
+    )
+
+
+def _row_to_equity(row) -> Equity:
+    return Equity(
+        symbol=row[0], name=row[1] or "", exchange=row[2] or "",
+        sector=row[3] or "", industry=row[4] or "", market_cap=row[5],
     )

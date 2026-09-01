@@ -16,8 +16,44 @@ python main.py --symbols AAPL MSFT --start-date 2024-01-01 --end-date 2024-01-31
 # Backfill returns
 python scripts/backfill_returns.py
 
+# Discover and store all available tickers in the equities table
+python scripts/backfill_equities.py
+
 # Text-based sentiment vs returns analysis
 python -m financial_sentiment.analysis
+```
+
+## FastAPI App
+
+```bash
+python scripts/run_api.py            # serves on http://127.0.0.1:8000
+python scripts/run_api.py --port 9000
+python scripts/run_api.py --reload   # dev mode
+```
+
+Then open `http://127.0.0.1:8000/` for the web UI, or `http://127.0.0.1:8000/docs`
+for the interactive OpenAPI documentation.
+
+**Current endpoints:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/equities/symbols?q=apple&limit=500` | List/search the 10K+ ticker universe |
+| `GET`  | `/equities/count` | Total tickers in DB |
+| `GET`  | `/pipeline/status` | Current DB coverage (news/prices/sentiment rows) |
+| `POST` | `/pipeline/run` | Run the fetch + sentiment pipeline for selected symbols + date range |
+
+The `POST /pipeline/run` body:
+```json
+{
+  "symbols": ["AAPL", "MSFT"],
+  "start_date": "2026-07-01",
+  "end_date": "2026-08-28",
+  "sources": ["openbb", "finnhub"],
+  "finnhub_sources": ["CNBC"],
+  "analyze": true,
+  "force_refresh": false
+}
 ```
 
 ## Usage
@@ -71,27 +107,37 @@ Open `notebooks/demo.ipynb` to inspect the database and visualize price lines wi
 │   └── news.db
 ├── notebooks/
 │   └── demo.ipynb
-├── scripts/
-│   ├── run_pipeline.py        # thin shim -> financial_sentiment.cli
-│   └── backfill_returns.py
-├── src/
-│   └── financial_sentiment/
-│       ├── __init__.py        # public API
-│       ├── config.py          # Settings dataclass
-│       ├── domain.py          # NewsItem, PriceBar, SentimentResult, Coverage
-│       ├── repository.py      # SQLite-backed Repository
-│       ├── pipeline.py        # Pipeline orchestrator
-│       ├── cli.py             # argparse -> Pipeline
-│       ├── analysis.py        # CorrelationAnalyzer
-│       ├── providers/
-│       │   ├── base.py        # NewsProvider, PriceProvider ABCs
-│       │   ├── openbb.py      # OpenBB implementations
-│       │   └── finnhub.py     # Finnhub implementation (with backward pagination)
-│       ├── sentiment/
-│       │   ├── base.py        # SentimentScorer ABC
-│       │   ├── finbert.py     # FinBERTScorer
-│       │   └── vllm.py        # VLLMScorer
-│       └── strategy.py        # future: trading strategies & backtesting
+│   ├── scripts/
+│   │   ├── run_pipeline.py        # thin shim -> financial_sentiment.cli
+│   │   ├── backfill_equities.py   # discover + store all available tickers
+│   │   └── backfill_returns.py
+│   ├── src/
+│   │   └── financial_sentiment/
+│   │       ├── __init__.py        # public API
+│   │       ├── config.py          # Settings dataclass
+│   │       ├── domain.py          # NewsItem, PriceBar, SentimentResult, Coverage, Equity
+│   │       ├── repository.py      # SQLite-backed Repository
+│   │       ├── pipeline.py        # Pipeline orchestrator
+│   │       ├── cli.py             # argparse -> Pipeline
+│   │       ├── analysis.py        # CorrelationAnalyzer
+│   │       ├── env_loader.py      # tiny .env loader (no external dependency)
+│   │       ├── providers/
+│   │       │   ├── base.py        # NewsProvider, PriceProvider ABCs
+│   │       │   ├── openbb.py      # OpenBB implementations
+│   │       │   └── finnhub.py     # Finnhub implementation (with backward pagination)
+│   │       ├── sentiment/
+│   │       │   ├── base.py        # SentimentScorer ABC
+│   │       │   ├── finbert.py     # FinBERTScorer
+│   │       │   ├── groq.py        # GroqSentimentScorer (OpenAI-compatible API)
+│   │       │   └── vllm.py        # VLLMScorer
+│   │       └── strategy/          # trading strategies & backtesting
+│   │           ├── __init__.py
+│   │           ├── data.py        # DataLoader, MarketDataPoint
+│   │           ├── portfolio.py   # Portfolio
+│   │           ├── trade.py       # Trade, Side
+│   │           ├── strategy.py    # SentimentThresholdStrategy
+│   │           ├── backtester.py  # Backtester
+│   │           └── optimizer.py   # StrategyOptimizer
 ├── main.py                    # single entry point
 ├── requirements.txt
 └── README.md
@@ -215,10 +261,15 @@ plus a per-symbol sign-agreement bar chart.
 
 ## Database Schema
 
+**equities** — universe of available tickers (for FastAPI lookup)
+- `symbol` (PRIMARY KEY)
+- `name`, `exchange`, `sector`, `industry`, `market_cap`
+
 **news**
 - `symbol`, `date`, `headline`, `text`, `source`, `url`
 - `sentiment_label`, `confidence`
 - `finbert_score` (-1 to +1)
+- `llm_label`, `llm_positive`, `llm_negative`, `llm_neutral`, `llm_score`
 
 **prices**
 - `symbol`, `date`, `open`, `high`, `low`, `close`, `volume`

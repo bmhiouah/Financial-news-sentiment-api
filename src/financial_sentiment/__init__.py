@@ -21,6 +21,7 @@ from .domain import (
     POSITIVE,
     PriceBar,
     SentimentResult,
+    Equity,
 )
 from .analysis import (
     CorrelationAnalyzer,
@@ -239,6 +240,7 @@ __all__ = [
     "POSITIVE_THRESHOLD", "NEGATIVE_THRESHOLD", "SETTINGS",
     # Domain
     "NewsItem", "PriceBar", "Coverage", "SentimentResult",
+    "Equity",
     "POSITIVE", "NEGATIVE", "NEUTRAL",
     # Repository
     "Repository",

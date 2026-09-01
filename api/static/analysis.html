@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analyze · Financial Sentiment Pipeline</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div>
+        <h1>Financial Sentiment Pipeline</h1>
+        <p class="subtitle">Explore correlations, price reactions, and backtest strategies</p>
+      </div>
+      <nav class="nav-tabs">
+        <a href="/">Enrich</a>
+        <a href="/analysis.html" class="active">Analyze</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ Global equity slicer ============ -->
+    <section class="card">
+      <h2>Select equities in your dataset</h2>
+      <p class="hint">Date range is auto-detected from the available data.</p>
+      <div class="slicer">
+        <div class="equity-row">
+          <input type="text" id="search" placeholder="Filter symbols...">
+          <div class="equity-list-header">
+            <span><b id="selected-count">0</b> selected / <span id="total-count">0</span> available</span>
+            <div>
+              <button class="btn-sm" id="select-all">Select all</button>
+              <button class="btn-sm" id="clear-selection">Clear</button>
+            </div>
+          </div>
+          <div id="equity-list" class="equity-list"></div>
+          <div id="loading-equities" class="loading">Loading symbols with data...</div>
+        </div>
+        <div id="date-info" class="date-info">Date range: <span id="date-range">—</span></div>
+      </div>
+    </section>
+
+    <!-- ============ Distribution + correlation bars ============ -->
+    <section class="card" data-requires="multi">
+      <div class="section-header">
+        <h2>Distribution &amp; Correlation by Equity</h2>
+        <div class="rt-slicer" id="rt-slicer">
+          <button class="btn-sm rt-btn active" data-rt="daily">Daily</button>
+          <button class="btn-sm rt-btn" data-rt="weekly">Weekly</button>
+          <button class="btn-sm rt-btn" data-rt="monthly">Monthly</button>
+        </div>
+      </div>
+      <p class="hint">Left: 12×12 sentiment × log-return heatmap (% per bin). Right: Pearson correlation bars. Slicer only affects this chart.</p>
+      <div id="distribution" style="min-height:500px;"></div>
+    </section>
+
+    <!-- ============ Correlation table ============ -->
+    <section class="card" data-requires="multi">
+      <h2>Correlation: Sentiment vs Returns</h2>
+      <div id="corr-table"></div>
+    </section>
+
+    <!-- ============ Price + sentiment ============ -->
+    <section class="card" data-requires="multi">
+      <h2>Price + News Sentiment</h2>
+      <p class="hint">Each marker is a day with news. Size = |score|, color = label.</p>
+      <div id="price-sentiment" style="min-height:500px;"></div>
+    </section>
+
+    <!-- ============ Backtest ============ -->
+    <section class="card" data-requires="single">
+      <h2>Trading Strategy Backtest</h2>
+      <p class="hint">Run a sentiment-threshold strategy with custom or optimized parameters.</p>
+
+      <div class="backtest-layout">
+        <div class="bt-controls">
+          <label>Symbol
+            <select id="bt-symbol"></select>
+          </label>
+          <fieldset>
+            <legend>Capital</legend>
+            <label>Initial <input type="number" id="bt-initial" value="100" step="any"></label>
+            <label>Trade size <input type="number" id="bt-trade-size" value="20" step="any"></label>
+          </fieldset>
+          <fieldset>
+            <legend>Stops</legend>
+            <label>Stop loss <input type="number" id="bt-stop-loss" value="-0.05" step="any"></label>
+            <label>Stop win <input type="number" id="bt-stop-win" value="0.10" step="any"></label>
+          </fieldset>
+          <fieldset>
+            <legend>Thresholds</legend>
+            <label>Buy ≥ <input type="number" id="bt-buy" value="0.2" step="any"></label>
+            <label>Sell ≤ <input type="number" id="bt-sell" value="-0.2" step="any"></label>
+          </fieldset>
+          <div class="bt-actions">
+            <button class="btn-primary" id="bt-run">Run Backtest</button>
+            <button class="btn-sm" id="bt-optimize" title="Search the parameter grid on the oldest 30 days of data">Find best parameters →</button>
+          </div>
+        </div>
+        <div class="bt-summary" id="bt-summary"></div>
+      </div>
+
+      <div id="bt-plot" style="min-height:600px; margin-top: 16px;"></div>
+    </section>
+
+    <!-- ============ Optimisation ============ -->
+    <section class="card" data-requires="single" id="opt-card" style="display:none;">
+      <div class="section-header">
+        <h2>Parameter Optimisation</h2>
+        <div class="rt-slicer" id="param-source">
+          <label class="radio-pill"><input type="radio" name="param-src" value="best" checked> Use best params</label>
+          <label class="radio-pill"><input type="radio" name="param-src" value="custom"> Use custom (above)</label>
+        </div>
+      </div>
+      <p class="hint">Coarse-then-refine grid search on the <b>oldest 30 days</b> of available data. Best P&amp;L selected. Hit "Run Backtest" afterwards to evaluate those params on the <b>full dataset</b>.</p>
+      <div id="opt-top10"></div>
+      <div id="opt-heatmap" style="min-height:400px; margin-top: 16px;"></div>
+    </section>
+  </main>
+
+  <script src="/static/analysis.js"></script>
+</body>
+</html>

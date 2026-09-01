@@ -9,3 +9,6 @@ plotly
 ipympl
 finnhub-python
 requests
+fastapi
+uvicorn
+python-dotenv

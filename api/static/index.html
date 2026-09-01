@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Financial Sentiment Pipeline</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div>
+        <h1>Financial Sentiment Pipeline</h1>
+        <p class="subtitle">Fetch, score, and analyze financial news sentiment</p>
+      </div>
+      <nav class="nav-tabs">
+        <a href="/" class="active">Enrich</a>
+        <a href="/analysis.html">Analyze</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. Select Equities</h2>
+      <div class="slicer">
+        <input type="text" id="search" placeholder="Search ticker or company name...">
+        <div class="equity-list-wrapper">
+          <div class="equity-list-header">
+            <span><b id="selected-count">0</b> selected / <span id="total-count">0</span> total</span>
+            <div>
+              <button class="btn-sm" id="select-all">Select all (filtered)</button>
+              <button class="btn-sm" id="clear-selection">Clear</button>
+            </div>
+          </div>
+          <div id="equity-list" class="equity-list"></div>
+          <div id="loading-equities" class="loading">Loading equities...</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Date Range</h2>
+      <div class="slicer">
+        <div class="date-row">
+          <label>Start date
+            <input type="date" id="start-date">
+          </label>
+          <label>End date
+            <input type="date" id="end-date">
+          </label>
+        </div>
+        <div class="presets">
+          <span>Presets:</span>
+          <button class="btn-sm preset" data-days="7">7 days</button>
+          <button class="btn-sm preset" data-days="30">30 days</button>
+          <button class="btn-sm preset" data-days="60">60 days</button>
+          <button class="btn-sm preset" data-days="90">90 days</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Run Pipeline</h2>
+      <div class="slicer">
+        <div class="options">
+          <label><input type="checkbox" id="source-openbb" checked> OpenBB</label>
+          <label><input type="checkbox" id="source-finnhub"> Finnhub</label>
+          <label><input type="checkbox" id="analyze" checked> Run FinBERT sentiment</label>
+          <label><input type="checkbox" id="force-refresh"> Force refresh (re-fetch even if covered)</label>
+        </div>
+        <button class="btn-primary" id="run-pipeline">Run Pipeline</button>
+        <div id="run-status" class="status"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

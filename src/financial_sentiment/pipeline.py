@@ -134,10 +134,7 @@ class Pipeline:
                 stats.scored += 1
         if items:
             stats.saved = self.repository.save_news(items, table=table)
-        stats.fetched = sum(
-            1 for s in symbols
-            if self._coverage_status(s, table, start_str, end_str) != "full"
-        )
+        stats.fetched = len(items)
         print(f"Saved {len(items)} {provider.name} news articles")
         return stats
 

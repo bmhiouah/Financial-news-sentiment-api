@@ -13,14 +13,17 @@ import json
 import os
 import time
 from typing import Optional
-from dotenv import load_dotenv
 
 import requests
 
 from ..domain import NEGATIVE, NEUTRAL, POSITIVE, SentimentResult
 from .base import SentimentScorer
 
-load_dotenv()
+try:
+    from ..env_loader import load_project_env
+    load_project_env()
+except Exception:
+    pass
 
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"

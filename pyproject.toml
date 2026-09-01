@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "financial-sentiment"
+version = "0.1.0"
+description = "Financial news sentiment pipeline: fetch, score, analyze, backtest."
+requires-python = ">=3.10"
+dependencies = [
+    "openbb==3.5.0",
+    "pydantic-settings",
+    "transformers",
+    "torch",
+    "sqlalchemy",
+    "loguru",
+    "matplotlib",
+    "plotly",
+    "ipympl",
+    "finnhub-python",
+    "requests",
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
