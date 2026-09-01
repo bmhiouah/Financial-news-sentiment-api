@@ -37,7 +37,12 @@ class PipelineRunRequest(BaseModel):
     start_date: _date
     end_date: _date
     sources: List[str] = Field(default=["openbb"], description="openbb, finnhub, or both")
-    finnhub_sources: List[str] = Field(default=["CNBC"])
+    # None/empty = keep every source. Restricting this (e.g. ["CNBC"]) is what
+    # used to silently discard ~90% of the available Finnhub articles.
+    finnhub_sources: Optional[List[str]] = Field(
+        default=None,
+        description="Restrict Finnhub to these publishers; omit for all sources",
+    )
     force_refresh: bool = False
     analyze: bool = True
 
@@ -45,15 +50,20 @@ class PipelineRunRequest(BaseModel):
 class ProviderStats(BaseModel):
     requested: int = 0
     fetched: int = 0
+    new: int = 0
     scored: int = 0
     saved: int = 0
     promoted: int = 0
     skipped: int = 0
+    failed: int = 0
 
 
 class PipelineRunResponse(BaseModel):
     results: dict[str, ProviderStats]
     summary: str
+    #: Non-fatal problems (e.g. "ABNB: no price data"), so a run that produced
+    #: nothing for a symbol is visible instead of looking like a success.
+    warnings: List[str] = []
 
 
 # --------------------------------------------------------------------------- #
@@ -180,6 +190,53 @@ class BacktestResult(BaseModel):
     initial_capital: float
     pnl: float
     points: List[BacktestPoint]
+
+
+# --------------------------------------------------------------------------- #
+# Strategy comparison (Simple vs Benchmark)
+# --------------------------------------------------------------------------- #
+
+class CompareRequest(BaseModel):
+    symbol: str
+    params: BacktestParams = BacktestParams()
+
+
+class CurvePoint(BaseModel):
+    date: str
+    value: float                      # portfolio value (virtual_capital)
+
+
+class ComparisonMetrics(BaseModel):
+    """All values are fractions/ ratios; the UI formats them.
+
+    `max_drawdown` is negative (e.g. -0.089 == an 8.9% peak-to-trough loss).
+    """
+
+    total_return: float
+    cagr: float
+    max_drawdown: float
+    sharpe_ratio: float
+
+
+class StrategyComparisonRow(BaseModel):
+    key: str                          # "simple" | "benchmark"
+    name: str                         # display name
+    description: str
+    metrics: ComparisonMetrics
+    initial_capital: float
+    final_capital: float
+    n_trades: int
+    curve: List[CurvePoint]
+
+
+class ComparisonResponse(BaseModel):
+    symbol: str
+    start: str
+    end: str
+    n_days: int                       # trading days in the shared window
+    metric_keys: List[str]            # row order for the heatmap
+    metric_labels: List[str]          # row labels for the heatmap
+    strategies: List[StrategyComparisonRow]
 
 
 # --------------------------------------------------------------------------- #

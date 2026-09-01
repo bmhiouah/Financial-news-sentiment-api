@@ -65,12 +65,20 @@
       <div class="slicer">
         <div class="options">
           <label><input type="checkbox" id="source-openbb" checked> OpenBB</label>
-          <label><input type="checkbox" id="source-finnhub"> Finnhub</label>
+          <label><input type="checkbox" id="source-finnhub" checked> Finnhub</label>
           <label><input type="checkbox" id="analyze" checked> Run FinBERT sentiment</label>
-          <label><input type="checkbox" id="force-refresh"> Force refresh (re-fetch even if covered)</label>
+          <label><input type="checkbox" id="force-refresh"> Force refresh prices (re-fetch even if covered)</label>
+        </div>
+        <div class="options">
+          <label class="inline-field">
+            Finnhub publishers
+            <input type="text" id="finnhub-sources" placeholder="all sources"
+                   title="Comma-separated, e.g. CNBC, Reuters. Leave empty to keep every publisher.">
+          </label>
         </div>
         <button class="btn-primary" id="run-pipeline">Run Pipeline</button>
         <div id="run-status" class="status"></div>
+        <div id="run-warnings" class="run-warnings"></div>
       </div>
     </section>
   </main>

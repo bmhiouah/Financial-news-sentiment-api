@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from openbb import obb
 
+from ..config import SETTINGS
 from ..domain import NewsItem, PriceBar, SOURCE_OPENBB
 from .base import NewsProvider, PriceProvider
 
@@ -13,6 +14,19 @@ from .base import NewsProvider, PriceProvider
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+#: Entry meaning "let OpenBB apply its own provider priority order".
+DEFAULT_PROVIDER = ""
+
+
+def _provider_kwargs(name: str) -> Dict[str, Any]:
+    """Build the `provider=` kwarg, or none at all for the OpenBB default."""
+    return {} if name == DEFAULT_PROVIDER else {"provider": name}
+
+
+def _provider_label(name: str) -> str:
+    return "openbb-default" if name == DEFAULT_PROVIDER else name
+
 
 def _get_attr(obj: Any, *keys: str, default=None):
     """Read a value from a dict or attribute, trying each key in order."""
@@ -28,11 +42,16 @@ def _get_attr(obj: Any, *keys: str, default=None):
 
 
 def _normalize_news_item(raw: Any, symbol: str) -> Optional[NewsItem]:
-    """Turn a raw OpenBB news result into a NewsItem, filtering by symbol."""
+    """Turn a raw OpenBB news result into a NewsItem, filtering by symbol.
+
+    Items that carry no symbol list at all are kept: the query was already
+    scoped to `symbol`, so dropping them would throw away valid coverage.
+    """
     raw_symbols = _get_attr(raw, "symbols", default=[])
     if isinstance(raw_symbols, str):
         raw_symbols = [s.strip() for s in raw_symbols.split(",") if s.strip()]
-    if symbol.upper() not in {s.upper() for s in (raw_symbols or [])}:
+    raw_symbols = [s for s in (raw_symbols or []) if s]
+    if raw_symbols and symbol.upper() not in {s.upper() for s in raw_symbols}:
         return None
     return NewsItem(
         symbol=symbol,
@@ -101,40 +120,87 @@ def _compute_returns(bars: List[PriceBar]) -> List[PriceBar]:
 class OpenBBNewsProvider(NewsProvider):
     name = "openbb"
 
+    def __init__(self, providers: Optional[Sequence[str]] = None) -> None:
+        self.providers = tuple(providers) if providers is not None else SETTINGS.news_providers
+
     def fetch(self, symbols: List[str], start: datetime, end: datetime,
               sources: Optional[List[str]] = None) -> List[NewsItem]:
         items: List[NewsItem] = []
         for symbol in symbols:
+            items.extend(self._fetch_one(symbol, start, end))
+        return items
+
+    def _fetch_one(self, symbol: str, start: datetime, end: datetime) -> List[NewsItem]:
+        """Try each OpenBB news provider in turn; stop at the one that has data."""
+        errors: List[str] = []
+        for provider in self.providers:
             try:
                 response = obb.news.company(
                     symbol=[symbol],
                     start_date=start.strftime("%Y-%m-%d"),
                     end_date=end.strftime("%Y-%m-%d"),
+                    **_provider_kwargs(provider),
                 )
             except Exception as e:
-                print(f"Warning: OpenBB news for {symbol} failed: {e}")
+                errors.append(f"{_provider_label(provider)}: {_short(e)}")
                 continue
+
+            found: List[NewsItem] = []
             for raw in getattr(response, "results", None) or []:
                 item = _normalize_news_item(raw, symbol)
                 if item is not None:
-                    items.append(item)
-        return items
+                    found.append(item)
+            if found:
+                return found
+            errors.append(f"{_provider_label(provider)}: no articles")
+
+        if errors:
+            print(f"Warning: OpenBB news for {symbol} unavailable "
+                  f"({' ; '.join(errors)})")
+        return []
 
 
 class OpenBBPriceProvider(PriceProvider):
     name = "openbb"
 
-    def fetch(self, symbol: str, start: datetime, end: datetime) -> List[PriceBar]:
-        try:
-            response = obb.equity.price.historical(
-                symbol=symbol,
-                start_date=start.strftime("%Y-%m-%d"),
-                end_date=end.strftime("%Y-%m-%d"),
-            )
-        except Exception as e:
-            print(f"Warning: OpenBB prices for {symbol} failed: {e}")
-            return []
+    def __init__(self, providers: Optional[Sequence[str]] = None) -> None:
+        self.providers = tuple(providers) if providers is not None else SETTINGS.price_providers
 
+    def fetch(self, symbol: str, start: datetime, end: datetime) -> List[PriceBar]:
+        """Try each OpenBB price provider in turn; return the first that has data.
+
+        Free FMP keys reject a lot of tickers with HTTP 402. Falling through to
+        yfinance (no key required) keeps those symbols usable instead of leaving
+        them with news but no prices, which hides them from the Analyse tab.
+        """
+        errors: List[str] = []
+        for provider in self.providers:
+            try:
+                response = obb.equity.price.historical(
+                    symbol=symbol,
+                    start_date=start.strftime("%Y-%m-%d"),
+                    end_date=end.strftime("%Y-%m-%d"),
+                    **_provider_kwargs(provider),
+                )
+            except Exception as e:
+                errors.append(f"{_provider_label(provider)}: {_short(e)}")
+                continue
+
+            bars = self._to_bars(symbol, response)
+            if bars:
+                if provider != DEFAULT_PROVIDER and self.providers[0] != provider:
+                    print(f"  {symbol}: prices via OpenBB provider "
+                          f"'{provider}' ({len(bars)} bars)")
+                return bars
+            errors.append(f"{_provider_label(provider)}: no bars")
+
+        if errors:
+            print(f"Warning: OpenBB prices for {symbol} failed on every provider "
+                  f"({' ; '.join(errors)})")
+        return []
+
+    @staticmethod
+    def _to_bars(symbol: str, response: Any) -> List[PriceBar]:
         rows = _price_rows_to_dicts(getattr(response, "results", None))
         bars: List[PriceBar] = []
         for row in rows:
@@ -149,3 +215,9 @@ class OpenBBPriceProvider(PriceProvider):
             ))
         bars.sort(key=lambda b: b.date)
         return _compute_returns(bars)
+
+
+def _short(err: Exception, limit: int = 140) -> str:
+    """One-line, squashed error text for warning messages."""
+    text = " ".join(str(err).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"

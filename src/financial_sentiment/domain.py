@@ -147,6 +147,17 @@ class Equity:
         )
 
 
+def news_key(item: "NewsItem") -> str:
+    """Stable identity for an article, used for de-duplication.
+
+    The URL is the natural key, but not every provider returns one, so fall
+    back to date + headline rather than dropping those articles.
+    """
+    if item.url:
+        return item.url
+    return f"{item.date}|{item.headline.strip().lower()}"
+
+
 def _coerce_date(value) -> str:
     """Accept date, datetime, pandas.Timestamp, or ISO string -> 'YYYY-MM-DD'."""
     if value is None:

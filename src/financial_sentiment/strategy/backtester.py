@@ -44,14 +44,14 @@ class Backtester:
 
     # ---- preflight ----
 
-    def count_signals(self, equity: str) -> int:
+    def count_signals(self, equity: str, df: Optional[pd.DataFrame] = None) -> int:
         """Count how many buy/sell signals the strategy would produce for `equity`."""
-        df = self.loader.load(equity)
+        df = df if df is not None else self.loader.load(equity)
         return int(self.strategy.signal_series(df["sentiment_score"]).notna().sum())
 
-    def validate(self, equity: str) -> int:
+    def validate(self, equity: str, df: Optional[pd.DataFrame] = None) -> int:
         """Raise `InsufficientSignalsError` if the data produces < min_signals signals."""
-        n = self.count_signals(equity)
+        n = self.count_signals(equity, df=df)
         if n < self.min_signals:
             raise InsufficientSignalsError(
                 f"Strategy on {equity!r} produces only {n} signal(s); "
@@ -62,8 +62,12 @@ class Backtester:
 
     # ---- main loop ----
 
-    def run(self, equity: str) -> pd.DataFrame:
+    def run(self, equity: str, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Run the strategy and return the enriched price DataFrame.
+
+        `df` can be supplied to run several strategies on one identical copy of
+        the data (used by `StrategyComparator`); otherwise the data is loaded
+        from the repository.
 
         Columns added: `capital`, `virtual_capital`, `open_long`, `open_short`.
 
@@ -73,8 +77,8 @@ class Backtester:
         - All open trades are closed on the final tick so the last
           `capital` value equals the final `virtual_capital`.
         """
-        df = self.loader.load(equity)
-        self.validate(equity)
+        df = df if df is not None else self.loader.load(equity)
+        self.validate(equity, df=df)
 
         capital: List[float] = []
         virtual: List[float] = []

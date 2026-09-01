@@ -125,7 +125,8 @@ input[type="text"]:focus, input[type="date"]:focus {
 }
 
 .equity-item:hover { background: #f7fafc; }
-.equity-item input[type="checkbox"] { margin-right: 10px; }
+.equity-item input[type="checkbox"],
+.equity-item input[type="radio"] { margin-right: 10px; }
 .equity-symbol { font-weight: 600; width: 70px; color: #2c5282; }
 .equity-name { color: #4a5568; flex: 1; }
 
@@ -163,6 +164,34 @@ input[type="text"]:focus, input[type="date"]:focus {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+}
+
+.inline-field input[type="text"] {
+  margin-left: 6px;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  min-width: 220px;
+}
+
+.run-warnings:empty {
+  display: none;
+}
+
+.run-warnings {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: #fffaf0;
+  border: 1px solid #f6e05e;
+  border-radius: 6px;
+  color: #744210;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.run-warnings ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
 }
 
 button {
@@ -433,3 +462,98 @@ button {
 .trial-table tr.best { background: #f0fff4; font-weight: 600; }
 .trial-table .pnl-pos { color: #22543d; }
 .trial-table .pnl-neg { color: #742a2a; }
+
+/* Strategy comparison: metric heatmap (rows = metrics, cols = strategies) */
+.cmp-chips {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.cmp-chip {
+  flex: 1 1 220px;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.cmp-chip-name { font-size: 12px; color: #718096; text-transform: uppercase; letter-spacing: 0.03em; }
+.cmp-chip-value { font-size: 22px; font-weight: 700; color: #1a202c; }
+.cmp-chip-meta { font-size: 12px; color: #718096; margin-top: 2px; }
+.cmp-chip .pnl-pos { color: #22543d; font-weight: 600; }
+.cmp-chip .pnl-neg { color: #742a2a; font-weight: 600; }
+
+.cmp-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 6px 5px;
+  font-size: 14px;
+}
+
+.cmp-table th {
+  padding: 8px 10px;
+  color: #2d3748;
+  font-weight: 600;
+  font-size: 13px;
+  text-align: center;
+}
+
+.cmp-table tbody th {
+  text-align: left;
+  background: #edf2f7;
+  border-radius: 6px;
+  font-weight: 600;
+  color: #2d3748;
+  white-space: nowrap;
+}
+
+.cmp-table td.cmp-cell {
+  text-align: center;
+  padding: 14px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* better value on that metric */
+.cmp-table td.cmp-win {
+  background: #e3f9ea;
+  color: #1c6b41;
+  box-shadow: inset 0 0 0 1px #8fdcb0;
+}
+
+/* worse value on that metric */
+.cmp-table td.cmp-lose {
+  background: #f2f5f8;
+  color: #6b7a8c;
+  font-weight: 600;
+}
+
+/* identical values */
+.cmp-table td.cmp-tie {
+  background: #f2f5f8;
+  color: #4a5568;
+  font-weight: 600;
+}
+
+.cmp-star { color: #1c6b41; margin-right: 5px; font-size: 13px; }
+
+.cmp-legend {
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: #718096;
+  line-height: 1.6;
+}
+
+.cmp-warning {
+  margin: 0 0 12px 0;
+  padding: 8px 12px;
+  background: #fffaf0;
+  border: 1px solid #fbd38d;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #8a5a12;
+}

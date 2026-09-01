@@ -2,7 +2,7 @@
 
 const API = "";
 let allSymbols = [];
-let selected = new Set();
+let selected = new Set();     // holds at most ONE symbol (single-equity page)
 let currentReturnType = "daily";
 let lastOptimization = null;  // remember optimize() result so user can re-run with best params
 
@@ -17,11 +17,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 // ---------- events ----------
 function bindEvents() {
   document.getElementById("search").addEventListener("input", e => renderList(e.target.value));
-  document.getElementById("select-all").addEventListener("click", () => {
-    allSymbols.forEach(s => selected.add(s));
-    renderList(document.getElementById("search").value);
-    loadAll();
-  });
   document.getElementById("clear-selection").addEventListener("click", () => {
     selected.clear();
     renderList(document.getElementById("search").value);
@@ -54,12 +49,9 @@ async function loadAvailableSymbols() {
     const data = await resp.json();
     allSymbols = data.symbols;
     document.getElementById("total-count").textContent = data.count;
+    // Single-equity page: pre-select the first symbol so the page isn't empty.
+    if (allSymbols.length > 0) selected = new Set([allSymbols[0]]);
     renderList("");
-    // pre-select all if dataset is small (matches notebook behaviour)
-    if (data.count <= 10) {
-      allSymbols.forEach(s => selected.add(s));
-      renderList("");
-    }
     el.style.display = "none";
   } catch (e) {
     el.textContent = `Error loading symbols: ${e.message}`;
@@ -101,6 +93,19 @@ function clearAllCharts() {
   document.getElementById("bt-summary").innerHTML = "";
   document.getElementById("opt-card").style.display = "none";
   lastOptimization = null;
+  clearComparison();
+}
+
+// Comparison panel (Simple vs Benchmark) — cleared whenever the result would
+// refer to a symbol that is no longer selected.
+function clearComparison() {
+  Plotly.purge("cmp-curve");
+  const curve = document.getElementById("cmp-curve");
+  if (curve) curve.innerHTML = "";
+  const summary = document.getElementById("cmp-summary");
+  if (summary) summary.innerHTML = "";
+  const heat = document.getElementById("cmp-heatmap");
+  if (heat) heat.innerHTML = "";
 }
 
 // ---------- price + sentiment ----------
@@ -157,7 +162,7 @@ function fillParamsFromBest() {
 }
 
 async function runBacktest() {
-  if (selected.size === 0) { alert("Select at least one equity first."); return; }
+  if (selected.size === 0) { alert("Select one equity first."); return; }
   refreshBacktestSymbolDropdown();
   const symbol = getBacktestSymbol();
   const params = readBacktestParams();
@@ -174,9 +179,134 @@ async function runBacktest() {
     if (!resp.ok) throw new Error(data.detail || resp.statusText);
     renderBacktestSummary(data);
     renderBacktestPlot(data);
+    // Same symbol + same params -> the benchmark comparison.
+    await runComparison(symbol, params);
   } catch (e) {
     summary.innerHTML = `<div class="status error" style="display:block;">${e.message}</div>`;
+    clearComparison();
   }
+}
+
+// ---------- strategy comparison (Simple vs Benchmark) ----------
+async function runComparison(symbol, params) {
+  const box = document.getElementById("cmp-summary");
+  box.innerHTML = `<div class="loading">Comparing strategies on <b>${symbol}</b>...</div>`;
+  Plotly.purge("cmp-curve");
+  document.getElementById("cmp-heatmap").innerHTML = "";
+  try {
+    const resp = await fetch(`${API}/backtest/compare`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol, params }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || resp.statusText);
+    renderComparisonHeatmap(data);
+    renderComparisonSummary(data);
+    renderComparisonCurve(data);
+  } catch (e) {
+    box.innerHTML = `<div class="status error" style="display:block;">${e.message}</div>`;
+  }
+}
+
+// Formats a metric fraction/ratio for display.
+function fmtMetric(key, v) {
+  if (v == null || !isFinite(v)) return "—";
+  if (key === "sharpe_ratio") return (v >= 0 ? "+" : "") + v.toFixed(2);
+  return (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
+}
+
+// 4 metrics (rows) x 2 strategies (cols). The better value on each row is
+// highlighted; for Max Drawdown the less negative value is the better one.
+function renderComparisonHeatmap(data) {
+  const strategies = data.strategies;
+  const rows = data.metric_keys.map((key, i) => {
+    const values = strategies.map(s => s.metrics[key]);
+    const best = Math.max(...values);
+    const allEqual = values.every(v => v === values[0]);
+    const cells = strategies.map((s, j) => {
+      const isBest = !allEqual && values[j] === best;
+      const cls = allEqual ? "cmp-tie" : (isBest ? "cmp-win" : "cmp-lose");
+      const badge = isBest ? '<span class="cmp-star">★</span>' : "";
+      return `<td class="cmp-cell ${cls}">${badge}${fmtMetric(key, values[j])}</td>`;
+    }).join("");
+    return `<tr><th scope="row">${data.metric_labels[i]}</th>${cells}</tr>`;
+  }).join("");
+
+  const head = strategies.map(s => `<th>${escapeHtml(s.name)}</th>`).join("");
+  document.getElementById("cmp-heatmap").innerHTML = `
+    <table class="cmp-table">
+      <thead><tr><th>Metric</th>${head}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="cmp-legend">
+      <span class="cmp-star">★</span> marks the better value on each metric.
+      Max Drawdown is shown as a negative number, so a <b>smaller loss</b> is better.
+      Both strategies use the same data, window and starting capital; Buy &amp; Hold is fully
+      invested, while the Simple Strategy only deploys <b>trade size</b> when a signal fires.
+    </p>
+  `;
+}
+
+function renderComparisonSummary(data) {
+  const cards = data.strategies.map(s => {
+    const ret = s.final_capital - s.initial_capital;
+    const cls = ret >= 0 ? "pnl-pos" : "pnl-neg";
+    return `
+      <div class="cmp-chip">
+        <div class="cmp-chip-name">${escapeHtml(s.name)}</div>
+        <div class="cmp-chip-value ${cls}">${s.final_capital.toFixed(2)}</div>
+        <div class="cmp-chip-meta">
+          final capital · <span class="${cls}">${ret >= 0 ? "+" : ""}${ret.toFixed(2)}</span>
+          · ${s.n_trades} closed trade${s.n_trades === 1 ? "" : "s"}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Annualised figures are unstable on a short window — say so rather than
+  // letting a 2-month CAGR be read as a yearly expectation.
+  const shortWindow = data.n_days > 0 && data.n_days < 120;
+  const warn = shortWindow ? `
+    <p class="cmp-warning">
+      Window is only <b>${data.n_days} trading days</b> (${data.start} → ${data.end}).
+      CAGR and Sharpe are annualised, so treat them as indicative only.
+    </p>` : "";
+
+  document.getElementById("cmp-summary").innerHTML = `
+    <div class="cmp-chips">${cards}</div>
+    ${warn}
+  `;
+}
+
+function renderComparisonCurve(data) {
+  const colors = ["#1f77b4", "#ff7f0e"];
+  const traces = data.strategies.map((s, i) => ({
+    x: s.curve.map(p => p.date),
+    y: s.curve.map(p => p.value),
+    type: "scatter",
+    mode: "lines",
+    name: s.name,
+    line: { width: 2.5, color: colors[i % colors.length] },
+    hovertemplate: `<b>${escapeHtml(s.name)}</b><br>%{x|%Y-%m-%d}<br>Value: %{y:.2f}<extra></extra>`,
+  }));
+
+  const base = data.strategies[0] ? data.strategies[0].initial_capital : 100;
+  const layout = {
+    title: `${data.symbol}: equity curve — Simple vs Benchmark`,
+    xaxis: { title: "Date" },
+    yaxis: { title: "Portfolio value" },
+    hovermode: "x unified",
+    height: 420,
+    legend: { orientation: "h", y: -0.2 },
+    margin: { t: 60, l: 60, r: 20, b: 60 },
+    shapes: [{
+      type: "line", xref: "paper", yref: "y",
+      x0: 0, x1: 1, y0: base, y1: base,
+      line: { color: "#a0aec0", dash: "dash", width: 1 },
+    }],
+  };
+  Plotly.newPlot("cmp-curve", traces, layout, { responsive: true });
 }
 
 async function runOptimize() {
@@ -218,18 +348,20 @@ function renderList(filter) {
   const container = document.getElementById("equity-list");
   const ql = (filter || "").toLowerCase();
   const filtered = ql ? allSymbols.filter(s => s.toLowerCase().includes(ql)) : allSymbols;
+  // Single-equity selection: radios sharing one name, so picking a symbol
+  // replaces the previous one instead of adding to it.
   container.innerHTML = filtered.map(s => `
     <label class="equity-item">
-      <input type="checkbox" data-symbol="${s}" ${selected.has(s) ? "checked" : ""}>
+      <input type="radio" name="equity" data-symbol="${s}" ${selected.has(s) ? "checked" : ""}>
       <span class="equity-symbol">${s}</span>
     </label>
   `).join("");
-  container.querySelectorAll("input[type=checkbox]").forEach(cb => {
-    cb.addEventListener("change", () => {
-      const sym = cb.dataset.symbol;
-      if (cb.checked) selected.add(sym); else selected.delete(sym);
-      document.getElementById("selected-count").textContent = selected.size;
+  container.querySelectorAll("input[type=radio]").forEach(rb => {
+    rb.addEventListener("change", () => {
+      selected = new Set([rb.dataset.symbol]);
+      renderList(document.getElementById("search").value);
       refreshBacktestSymbolDropdown();
+      clearComparison();
       loadAll();
     });
   });

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set
 
-from .domain import Coverage, NewsItem, PriceBar, SOURCE_FINNHUB, SOURCE_OPENBB
+from .domain import Coverage, NewsItem, PriceBar, SOURCE_FINNHUB, SOURCE_OPENBB, news_key
 from .providers import (
     FinnhubNewsProvider,
     NewsProvider,
@@ -29,10 +29,12 @@ from .sentiment import FinBERTScorer, SentimentScorer
 class FetchStats:
     requested: int = 0
     fetched: int = 0
+    new: int = 0       # articles not already in the database
     scored: int = 0
     saved: int = 0
     promoted: int = 0
     skipped: int = 0
+    failed: int = 0    # symbols where every provider came back empty
 
     @property
     def api_calls(self) -> int:
@@ -58,6 +60,8 @@ class Pipeline:
     news_providers: List[NewsProvider] = field(default_factory=list)
     price_provider: PriceProvider = field(default_factory=OpenBBPriceProvider)
     scorer: SentimentScorer = field(default_factory=FinBERTScorer)
+    #: Human-readable problems hit during the last run (empty providers, etc.).
+    warnings: List[str] = field(default_factory=list)
 
     # ---- factories ----
 
@@ -90,8 +94,11 @@ class Pipeline:
                         start: str, end: str) -> None:
         cov = self.repository.coverage(symbol, table, start=start, end=end)
         if status == "full":
+            # News is re-fetched every run (providers never guarantee they
+            # returned everything), prices are genuinely skipped.
+            action = "skipping API call" if table == "prices" else "re-checking"
             print(f"  {symbol}: already in DB ({cov.n_rows} rows, "
-                  f"{cov.min_date} -> {cov.max_date}), skipping API call")
+                  f"{cov.min_date} -> {cov.max_date}), {action}")
         elif status == "partial":
             print(f"  {symbol}: partial coverage ({cov.n_rows} rows, "
                   f"{cov.min_date} -> {cov.max_date}), fetching to fill "
@@ -106,6 +113,12 @@ class Pipeline:
                             force_refresh: bool, analyze: bool,
                             finnhub_sources: Optional[List[str]] = None,
                             ) -> FetchStats:
+        """Fetch news for every symbol and store whatever is not there yet.
+
+        News is always re-fetched (there is no reliable way to know a provider
+        gave us everything last time) and de-duplicated against the database
+        before scoring, so a repeat run costs API calls but no FinBERT work.
+        """
         stats = FetchStats(requested=len(symbols))
         start_str = start.strftime("%Y-%m-%d")
         end_str = end.strftime("%Y-%m-%d")
@@ -113,30 +126,76 @@ class Pipeline:
 
         print(f"{provider.name} news:")
         for symbol in symbols:
-            status = self._coverage_status(symbol, table, start_str, end_str)
-            if not force_refresh and status == "full":
-                self._print_coverage(symbol, table, "full", start_str, end_str)
-                stats.skipped += 1
-                continue
-            self._print_coverage(symbol, table, status, start_str, end_str)
+            self._print_coverage(symbol, table,
+                                 self._coverage_status(symbol, table, start_str, end_str),
+                                 start_str, end_str)
             kwargs = {}
             if provider.name == "finnhub" and finnhub_sources is not None:
                 kwargs["sources"] = finnhub_sources
-            items.extend(provider.fetch([symbol], start, end, **kwargs))
+            try:
+                fetched = provider.fetch([symbol], start, end, **kwargs)
+            except Exception as e:
+                # A missing API key must not abort the whole run: Finnhub is
+                # optional if OpenBB is selected, and vice versa.
+                print(f"  {symbol}: {provider.name} unavailable ({e})")
+                self.warnings.append(f"{symbol}: {provider.name} news failed ({e})")
+                stats.failed += 1
+                continue
+            if not fetched:
+                print(f"  {symbol}: no articles from {provider.name}")
+                stats.failed += 1
+            items.extend(fetched)
 
-        if analyze and items:
-            print(f"Analyzing {provider.name} sentiment (FinBERT)...")
-            for item in items:
+        stats.fetched = len(items)
+        items = self._drop_duplicates(items)
+        fresh = self._drop_already_stored(items, table)
+        stats.new = len(fresh)
+
+        if analyze and fresh:
+            print(f"Analyzing {provider.name} sentiment (FinBERT) on "
+                  f"{len(fresh)} new article(s)...")
+            for item in fresh:
                 result = self.scorer.score(item.headline)
                 item.sentiment_label = result.label
                 item.confidence = result.confidence
                 item.finbert_score = result.score
                 stats.scored += 1
-        if items:
-            stats.saved = self.repository.save_news(items, table=table)
-        stats.fetched = len(items)
-        print(f"Saved {len(items)} {provider.name} news articles")
+        elif items and not fresh:
+            print(f"  all {len(items)} {provider.name} articles already in DB, "
+                  f"nothing to score")
+
+        if fresh:
+            stats.saved = self.repository.save_news(fresh, table=table)
+        print(f"Saved {stats.saved} new {provider.name} news articles "
+              f"({stats.fetched} fetched, {stats.fetched - stats.new} already known)")
         return stats
+
+    @staticmethod
+    def _drop_duplicates(items: List[NewsItem]) -> List[NewsItem]:
+        """Remove repeats inside a single fetch batch."""
+        seen: Set[str] = set()
+        out: List[NewsItem] = []
+        for item in items:
+            key = news_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+        return out
+
+    def _drop_already_stored(self, items: List[NewsItem], table: str) -> List[NewsItem]:
+        """Keep only articles whose URL is not already stored for that symbol."""
+        by_symbol: Dict[str, List[NewsItem]] = {}
+        for item in items:
+            by_symbol.setdefault(item.symbol, []).append(item)
+
+        fresh: List[NewsItem] = []
+        for symbol, group in by_symbol.items():
+            known = self.repository.existing_urls(
+                symbol, table, [i.url for i in group if i.url]
+            )
+            fresh.extend(i for i in group if not i.url or i.url not in known)
+        return fresh
 
     def fetch_news(self, symbols: Sequence[str], start: datetime, end: datetime,
                    sources: Sequence[str] = ("openbb", "finnhub"),
@@ -204,7 +263,16 @@ class Pipeline:
                 stats.skipped += 1
                 continue
             self._print_coverage(symbol, "prices", status, start_str, end_str)
-            bars.extend(self.price_provider.fetch(symbol, start, end))
+            symbol_bars = self.price_provider.fetch(symbol, start, end)
+            if not symbol_bars:
+                # Without prices a symbol stays invisible in the Analyse tab,
+                # so this must be reported rather than buried in a print().
+                stats.failed += 1
+                message = (f"{symbol}: no price data for {start_str} -> {end_str} "
+                           f"(all OpenBB price providers returned nothing)")
+                print(f"  Warning: {message}")
+                self.warnings.append(message)
+            bars.extend(symbol_bars)
 
         if bars:
             stats.saved = self.repository.save_prices(bars)
@@ -220,6 +288,7 @@ class Pipeline:
             force_refresh: bool = False,
             analyze: bool = True) -> Dict[str, FetchStats]:
         self.repository.init()
+        self.warnings.clear()
         results = self.fetch_news(
             symbols=symbols, start=start, end=end,
             sources=sources, finnhub_sources=finnhub_sources,

@@ -1,127 +1,140 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="en" data-page-node-id="EWDEtYk4DIhfI2soBmkUQq">
+<head data-page-node-id="Pba8dQwODBi5wNFdExEwfL">
+  <meta charset="UTF-8" data-page-node-id="Pz3Rtf8gR8cdoAjJ5yoIIH">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="oO73wP3RrqpJ5vIMI3URk4">
   <title>Analyze · Financial Sentiment Pipeline</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css" data-page-node-id="mS62CPDBsdonBKTfEeg286">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 </head>
-<body>
-  <header>
-    <div class="header-inner">
-      <div>
-        <h1>Financial Sentiment Pipeline</h1>
-        <p class="subtitle">Explore correlations, price reactions, and backtest strategies</p>
+<body data-page-node-id="yhXjH0xvxE4A91Ds533YUF">
+  <header data-page-node-id="8AJkGsmBTi2MuLai7cQtDX">
+    <div class="header-inner" data-page-node-id="jc9CCmyiB3vhzQWeoQcuZb">
+      <div data-page-node-id="jCDLsSVDy3GEHEHu21XW4Z">
+        <h1 data-page-node-id="tHB884KLNYnnpfRuXRhwm1">Financial Sentiment Pipeline</h1>
+        <p class="subtitle" data-page-node-id="UVzKl4kxnOYwuN6oMKxrA9">Explore correlations, price reactions, and backtest strategies</p>
       </div>
-      <nav class="nav-tabs">
-        <a href="/">Enrich</a>
-        <a href="/analysis.html" class="active">Analyze</a>
+      <nav class="nav-tabs" data-page-node-id="WC6m0FfvAdHuYydEnUnU7Z">
+        <a href="/" data-page-node-id="DeCcX2PTWFJUlivfXOnIwf">Enrich</a>
+        <a href="/analysis.html" class="active" data-page-node-id="XL1vaDwL7Xg6Odvfsgmf3K">Analyze</a>
       </nav>
     </div>
   </header>
 
-  <main>
-    <!-- ============ Global equity slicer ============ -->
-    <section class="card">
-      <h2>Select equities in your dataset</h2>
-      <p class="hint">Date range is auto-detected from the available data.</p>
-      <div class="slicer">
-        <div class="equity-row">
-          <input type="text" id="search" placeholder="Filter symbols...">
-          <div class="equity-list-header">
-            <span><b id="selected-count">0</b> selected / <span id="total-count">0</span> available</span>
-            <div>
-              <button class="btn-sm" id="select-all">Select all</button>
-              <button class="btn-sm" id="clear-selection">Clear</button>
+  <main data-page-node-id="fWbzaxPeGxGUD1TxYB3eL3">
+    <!-- ============ Global equity slicer (single equity) ============ -->
+    <section class="card" data-page-node-id="NBOdFGo99ELcXnDGk0PyuE">
+      <h2 data-page-node-id="a5BeCK9NbgWAzYnONpjYa8">Select one equity</h2>
+      <p class="hint" data-page-node-id="euBE7hQl5mxhHR4soISp4r">Pick a single equity — every chart, backtest and strategy comparison below is built from it. Date range is auto-detected from the available data.</p>
+      <div class="slicer" data-page-node-id="grurbf8gAUB4MigpLOWc4K">
+        <div class="equity-row" data-page-node-id="IHcuaQjtkBqXRGS901sS1g">
+          <input type="text" id="search" placeholder="Filter symbols..." data-page-node-id="vFg8h2S729YaE8FTBEkE2p">
+          <div class="equity-list-header" data-page-node-id="Jupto3kbB8yq9DX6fQjFNY">
+            <span data-page-node-id="F6ww0aY1Lgd4rZTVyOC7lP"><b id="selected-count" data-page-node-id="8xNbeFmTDT47wu1G6WlDYE">0</b> selected / <span id="total-count" data-page-node-id="EVwKTYhNHCCzU9pYjgjn6z">0</span> available</span>
+            <div data-page-node-id="l9jkARVT98sKLRFBiFMk7E">
+              <button class="btn-sm" id="clear-selection" data-page-node-id="Ktr8jnGJkVbPVRJQY37mwu">Clear</button>
             </div>
           </div>
-          <div id="equity-list" class="equity-list"></div>
-          <div id="loading-equities" class="loading">Loading symbols with data...</div>
+          <div id="equity-list" class="equity-list" data-page-node-id="TxgjXBjDjZSUTFMH9YVq2Y"></div>
+          <div id="loading-equities" class="loading" data-page-node-id="pAIpSaoTxR3YiAw3Bvgt96">Loading symbols with data...</div>
         </div>
-        <div id="date-info" class="date-info">Date range: <span id="date-range">—</span></div>
+        <div id="date-info" class="date-info" data-page-node-id="BRxY55sdOFPUitRwOX2jDN">Date range: <span id="date-range" data-page-node-id="3wlHyRFPcCWnrCTO7f5FWM">—</span></div>
       </div>
     </section>
 
     <!-- ============ Distribution by Equity ============ -->
-    <section class="card" data-requires="multi">
-      <div class="section-header">
-        <h2>Distribution by Equity</h2>
-        <div class="rt-slicer" id="rt-slicer">
-          <button class="btn-sm rt-btn active" data-rt="daily">Daily</button>
-          <button class="btn-sm rt-btn" data-rt="weekly">Weekly</button>
-          <button class="btn-sm rt-btn" data-rt="monthly">Monthly</button>
+    <section class="card" data-requires="multi" data-page-node-id="ZJdCRLJT9LS7k91GqGQmBk">
+      <div class="section-header" data-page-node-id="vrRgwmLHcQ3AxrHzqcoD94">
+        <h2 data-page-node-id="qugIRHW0vrxwpg70MZYSOK">Distribution by Equity</h2>
+        <div class="rt-slicer" id="rt-slicer" data-page-node-id="mmpkOAJBizxCBDIQpOFPCh">
+          <button class="btn-sm rt-btn active" data-rt="daily" data-page-node-id="0hMvd1vJCwBPIVBeGikCTm">Daily</button>
+          <button class="btn-sm rt-btn" data-rt="weekly" data-page-node-id="tGXx68JDkbxQRFUaLTTKfq">Weekly</button>
+          <button class="btn-sm rt-btn" data-rt="monthly" data-page-node-id="TETBI9EDLTlEJDUAGepcJq">Monthly</button>
         </div>
       </div>
-      <p class="hint">12×12 sentiment × log-return heatmap. Each cell shows the % of data points in that bucket. Slicer only affects this chart.</p>
-      <div id="distribution" style="min-height:500px;"></div>
+      <p class="hint" data-page-node-id="d9ist9tiyBzqlEjLqBjSG6">12×12 sentiment × log-return heatmap. Each cell shows the % of data points in that bucket. Slicer only affects this chart.</p>
+      <div id="distribution" style="min-height:500px;" data-page-node-id="h0YMY3O8IH4Gfw8EO1CSe8"></div>
     </section>
 
     <!-- ============ Correlation by Equity ============ -->
-    <section class="card" data-requires="multi">
-      <h2>Correlation by Equity</h2>
-      <p class="hint">Pearson correlation of mean-daily FinBERT sentiment vs daily/weekly/monthly returns, per symbol.</p>
-      <div id="correlation-bars" style="min-height:400px;"></div>
+    <section class="card" data-requires="multi" data-page-node-id="7c7WtNGqoYXckgcSxYtUWc">
+      <h2 data-page-node-id="TzkysHzewxOrymqu1kU8r9">Correlation by Equity</h2>
+      <p class="hint" data-page-node-id="ahf71rgCFKJg2kLryiDJlK">Pearson correlation of mean-daily FinBERT sentiment vs daily/weekly/monthly returns, per symbol.</p>
+      <div id="correlation-bars" style="min-height:400px;" data-page-node-id="DXKrwEyGVcJcDGdvC0j8UW"></div>
     </section>
 
     <!-- ============ Price + sentiment ============ -->
-    <section class="card" data-requires="multi">
-      <h2>Price + News Sentiment</h2>
-      <p class="hint">Each marker is a day with news. Size = |score|, color = label. Click a marker to see the news below.</p>
-      <div id="price-sentiment" style="min-height:500px;"></div>
-      <div id="news-panel" class="news-panel" style="margin-top: 16px;">
-        <div class="news-panel-empty">Click a sentiment marker to see the news for that day.</div>
+    <section class="card" data-requires="multi" data-page-node-id="45OUxmFefChhLBmD9YoxhW">
+      <h2 data-page-node-id="mtRElPfzDuW6Ud21dFJKKh">Price + News Sentiment</h2>
+      <p class="hint" data-page-node-id="qk3MA4MBTDHWwuwlrYTRCB">Each marker is a day with news. Size = |score|, color = label. Click a marker to see the news below.</p>
+      <div id="price-sentiment" style="min-height:500px;" data-page-node-id="5AINR6wYgqkTjQh7xUPu16"></div>
+      <div id="news-panel" class="news-panel" style="margin-top: 16px;" data-page-node-id="c7DrTFW4Mr9XyiWatqWcnf">
+        <div class="news-panel-empty" data-page-node-id="taUkCLDPrb4UacARjv3eHj">Click a sentiment marker to see the news for that day.</div>
       </div>
     </section>
 
     <!-- ============ Backtest ============ -->
-    <section class="card" data-requires="single">
-      <h2>Trading Strategy Backtest</h2>
-      <p class="hint">Run a sentiment-threshold strategy with custom or optimized parameters.</p>
+    <section class="card" data-requires="single" data-page-node-id="gT2Bf846tT8iLwR9vZxrBT">
+      <h2 data-page-node-id="54gi0jKKNZDI9r4LPZ3tyQ">Trading Strategy Backtest</h2>
+      <p class="hint" data-page-node-id="imXujyEVGv0NV7hEmqi9md">Run a sentiment-threshold strategy with custom or optimized parameters.</p>
 
-      <div class="backtest-layout">
-        <div class="bt-controls">
-          <label>Symbol
-            <select id="bt-symbol"></select>
+      <div class="backtest-layout" data-page-node-id="6Cxu6nCQlwJGMgJxVVp0iK">
+        <div class="bt-controls" data-page-node-id="xPnC7dEke0Bzb8K9XUOIJu">
+          <label data-page-node-id="E0GulKgbCM1N8EoX2hHTeg">Symbol
+            <select id="bt-symbol" data-page-node-id="Zeg1Bf9GEqotl3zofbgneS"></select>
           </label>
-          <fieldset>
-            <legend>Capital</legend>
-            <label>Initial <input type="number" id="bt-initial" value="100" step="any"></label>
-            <label>Trade size <input type="number" id="bt-trade-size" value="20" step="any"></label>
+          <fieldset data-page-node-id="7elYXg46iAHJZWZCJhE52T">
+            <legend data-page-node-id="tCquP4P0AU6zKJPHBTCQTG">Capital</legend>
+            <label data-page-node-id="YKl6jmbEHT6y0fFV6uXpk7">Initial <input type="number" id="bt-initial" value="100" step="any" data-page-node-id="7bFhDtBDRUsGKQST5wwgQ7"></label>
+            <label data-page-node-id="1N816KtV42jLdAgrJoyChJ">Trade size <input type="number" id="bt-trade-size" value="20" step="any" data-page-node-id="BAjXrfFLnV0tGhXxIHn7S2"></label>
           </fieldset>
-          <fieldset>
-            <legend>Stops</legend>
-            <label>Stop loss <input type="number" id="bt-stop-loss" value="-0.05" step="any"></label>
-            <label>Stop win <input type="number" id="bt-stop-win" value="0.10" step="any"></label>
+          <fieldset data-page-node-id="aX86Sdc8df0xPPJ2LZX9Ef">
+            <legend data-page-node-id="zcrutqSB3Vld8pXmy67uew">Stops</legend>
+            <label data-page-node-id="oJCYJL5JrOyvx25QjDgqnk">Stop loss <input type="number" id="bt-stop-loss" value="-0.05" step="any" data-page-node-id="F7CEa7oXvnxAjCr4gpPvbO"></label>
+            <label data-page-node-id="Iz7cL7LfHxAvb2lBCT0PeK">Stop win <input type="number" id="bt-stop-win" value="0.10" step="any" data-page-node-id="WFelYoZ2Mz37GlqBjLwuHX"></label>
           </fieldset>
-          <fieldset>
-            <legend>Thresholds</legend>
-            <label>Buy ≥ <input type="number" id="bt-buy" value="0.2" step="any"></label>
-            <label>Sell ≤ <input type="number" id="bt-sell" value="-0.2" step="any"></label>
+          <fieldset data-page-node-id="3dWIchyCDPkTG0l68R9Jhq">
+            <legend data-page-node-id="mKPOTvjQzJWUwtc3QQfpoZ">Thresholds</legend>
+            <label data-page-node-id="jaJ8L7fNDtxrd0Q1FJ7wAN">Buy ≥ <input type="number" id="bt-buy" value="0.2" step="any" data-page-node-id="ciu1jBUgsBH5gHhe4Zg0E0"></label>
+            <label data-page-node-id="8zpvhe00ATiHV4OmoqhUon">Sell ≤ <input type="number" id="bt-sell" value="-0.2" step="any" data-page-node-id="ZLoIl17jcMk2gApqGV1g74"></label>
           </fieldset>
-          <div class="bt-actions">
-            <button class="btn-primary" id="bt-run">Run Backtest</button>
-            <button class="btn-sm" id="bt-optimize" title="Search the parameter grid on the oldest 30 days of data">Find best parameters →</button>
+          <div class="bt-actions" data-page-node-id="o5UDu0DC9wDevMpaiSWfNW">
+            <button class="btn-primary" id="bt-run" data-page-node-id="ByRGnQCAp3kSFkD8oaXdHq">Run Backtest &amp; Compare</button>
+            <button class="btn-sm" id="bt-optimize" title="Search the parameter grid on the oldest 30 days of data" data-page-node-id="2aAIhHU0dz6cqUpUBXFCM3">Find best parameters →</button>
           </div>
         </div>
-        <div class="bt-summary" id="bt-summary"></div>
+        <div class="bt-summary" id="bt-summary" data-page-node-id="hWaYsQJW4Wlr6goHKVQ0Rm"></div>
       </div>
 
-      <div id="bt-plot" style="min-height:600px; margin-top: 16px;"></div>
+      <div id="bt-plot" style="min-height:600px; margin-top: 16px;" data-page-node-id="3kz5K0ITcsa0kM0oCU7p43"></div>
+    </section>
+
+    <!-- ============ Strategy comparison (Simple vs Benchmark) ============ -->
+    <section class="card" data-requires="single" id="cmp-card" data-page-node-id="euiQd0HzAGDXUEiZxUsiel">
+      <h2 data-page-node-id="UA1gbScP28U3axicFpCVSj">Simple vs Benchmark Strategy</h2>
+      <p class="hint" data-page-node-id="fqpT5RBNTvaIwo596P5IxS">
+        Both strategies run on the <b data-page-node-id="wwWJqfGjXugoAkCNb4DJrR">same equity</b>, the <b data-page-node-id="U73BRr8DDluR7UMMaWkYCo">same price/sentiment data</b> and the
+        <b data-page-node-id="rRr3mOEdXqMCg8UFWBz1YN">same window</b>, starting from the same capital. The benchmark is <b data-page-node-id="u02pmNzzStOHE6dlcWApbh">Buy &amp; Hold</b>:
+        invest 100% of the capital on the first day, hold to the last. Runs together with the
+        backtest above.
+      </p>
+      <div id="cmp-summary" data-page-node-id="6cAYFVtzvziV7v4POE3P0m"></div>
+      <div id="cmp-heatmap" data-page-node-id="RwL7xQdTdVg2vAFnyakx3e"></div>
+      <div id="cmp-curve" style="min-height:420px; margin-top: 16px;" data-page-node-id="2wJ3imC3KBZMrELmq9sYq7"></div>
     </section>
 
     <!-- ============ Optimisation ============ -->
-    <section class="card" data-requires="single" id="opt-card" style="display:none;">
-      <div class="section-header">
-        <h2>Parameter Optimisation</h2>
-        <div class="rt-slicer" id="param-source">
-          <label class="radio-pill"><input type="radio" name="param-src" value="best" checked> Use best params</label>
-          <label class="radio-pill"><input type="radio" name="param-src" value="custom"> Use custom (above)</label>
+    <section class="card" data-requires="single" id="opt-card" style="display:none;" data-page-node-id="SZZPTgiXFhGyss9Bh3nZYu">
+      <div class="section-header" data-page-node-id="LM1RGuQAxnEcLKA5gJP2Q8">
+        <h2 data-page-node-id="sNWLWfAprVXdFpm3gOA2o7">Parameter Optimisation</h2>
+        <div class="rt-slicer" id="param-source" data-page-node-id="pwpfyJXr8mKtv8YDIVusKI">
+          <label class="radio-pill" data-page-node-id="dLqozRNzEsp5r8vDcZtE9H"><input type="radio" name="param-src" value="best" checked data-page-node-id="2eSjTSBAZ8P5mslCyPxAEq"> Use best params</label>
+          <label class="radio-pill" data-page-node-id="KiherefdBZMYeb8qXV4QV6"><input type="radio" name="param-src" value="custom" data-page-node-id="gqqbvKh77cDXi1H8NDpp0f"> Use custom (above)</label>
         </div>
       </div>
-      <p class="hint">Coarse-then-refine grid search on the <b>oldest 30 days</b> of available data. Best P&amp;L selected. Hit "Run Backtest" afterwards to evaluate those params on the <b>full dataset</b>.</p>
-      <div id="opt-top10"></div>
-      <div id="opt-heatmap" style="min-height:400px; margin-top: 16px;"></div>
+      <p class="hint" data-page-node-id="S3CSaql1v8A7D8gJOjbEte">Coarse-then-refine grid search on the <b data-page-node-id="P3YEbtSUS5DNnzo1o4Oa5Q">oldest 30 days</b> of available data. Best P&amp;L selected. Hit "Run Backtest" afterwards to evaluate those params on the <b data-page-node-id="4dVvuJluqZ0rYSpZ5u7YsF">full dataset</b>.</p>
+      <div id="opt-top10" data-page-node-id="r10LthoObT09IgI3PiYrHF"></div>
+      <div id="opt-heatmap" style="min-height:400px; margin-top: 16px;" data-page-node-id="WVMwkPWt1kC6FqswlJdljm"></div>
     </section>
   </main>
 

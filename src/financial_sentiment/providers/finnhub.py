@@ -3,9 +3,14 @@
 Implements backward pagination: when a full page is returned, the next call
 uses end-date = (oldest item date - 1 day) and refetches, until the page is
 short or the user-requested start_date is reached.
+
+Finnhub truncates a single `company_news` response to roughly 250 items and
+returns the most recent ones, so walking the end date backwards is what makes
+the older pages reachable at all.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 from typing import List, Optional, Set
 
@@ -13,7 +18,7 @@ import finnhub
 from openbb import obb
 
 from ..config import SETTINGS
-from ..domain import NewsItem, SOURCE_FINNHUB
+from ..domain import NewsItem, SOURCE_FINNHUB, news_key
 from .base import NewsProvider
 
 
@@ -45,10 +50,37 @@ def _to_item(symbol: str, raw: dict, fallback_date: str) -> NewsItem:
 class FinnhubNewsProvider(NewsProvider):
     name = "finnhub"
 
-    def __init__(self, page_limit: Optional[int] = None,
-                 max_pages: int = 20) -> None:
+    def __init__(self,
+                 page_limit: Optional[int] = None,
+                 max_pages: Optional[int] = None,
+                 retry_attempts: int = 3) -> None:
         self.page_limit = page_limit or SETTINGS.finnhub_page_limit
-        self.max_pages = max_pages
+        self.max_pages = max_pages or SETTINGS.finnhub_max_pages
+        self.retry_attempts = retry_attempts
+
+    # ---- internals ----
+
+    def _call(self, client, symbol: str, start_str: str,
+              window_end_str: str) -> Optional[List[dict]]:
+        """One `company_news` page, retried on transient errors.
+
+        Returns None when the page could not be read at all, so the caller can
+        stop cleanly instead of treating a failure as "no older news exists".
+        """
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                return client.company_news(
+                    symbol, _from=start_str, to=window_end_str
+                ) or []
+            except Exception as e:
+                if attempt >= self.retry_attempts:
+                    print(f"Warning: Finnhub company_news({symbol}) failed: {e}")
+                    return None
+                # Free tier is rate limited to 60 calls/minute.
+                time.sleep(2 * attempt)
+        return None
+
+    # ---- public API ----
 
     def fetch(self, symbols: List[str], start: datetime, end: datetime,
               sources: Optional[List[str]] = None) -> List[NewsItem]:
@@ -67,28 +99,26 @@ class FinnhubNewsProvider(NewsProvider):
                 if window_end.date() < start.date():
                     break
                 window_end_str = window_end.strftime("%Y-%m-%d")
-                try:
-                    items = client.company_news(
-                        symbol, _from=start_str, to=window_end_str
-                    )
-                except Exception as e:
-                    print(f"Warning: Finnhub company_news({symbol}) failed: {e}")
+
+                items = self._call(client, symbol, start_str, window_end_str)
+                if items is None:
                     break
-                items = items or []
                 if not items:
                     break
 
                 for raw in items:
                     item = _to_item(symbol, raw, window_end_str)
-                    if not item.url or item.url in seen:
-                        continue
-                    if allowed and item.source.upper() not in allowed:
-                        continue
                     if item.date < start_str:
                         continue
-                    seen.add(item.url)
+                    if allowed and (item.source or "").upper() not in allowed:
+                        continue
+                    key = news_key(item)
+                    if key in seen:
+                        continue
+                    seen.add(key)
                     out.append(item)
 
+                # A short page means this window is fully drained.
                 if len(items) < self.page_limit:
                     break
 
@@ -102,6 +132,7 @@ class FinnhubNewsProvider(NewsProvider):
                 window_end = datetime.combine(
                     oldest_date, datetime.min.time()
                 ) - timedelta(days=1)
+                time.sleep(0.2)  # stay well clear of the rate limit
 
         out.sort(key=lambda i: (i.symbol, i.date), reverse=True)
         return out

@@ -42,16 +42,22 @@ from .sentiment import FinBERTScorer, GroqSentimentScorer, SentimentScorer, VLLM
 from .strategy import (  # noqa: E402
     DEFAULT_COARSE_GRID,
     Backtester,
+    BuyAndHoldStrategy,
+    ComparisonResult,
     DataLoader,
     InsufficientSignalsError,
+    METRIC_KEYS,
     MarketDataPoint,
     OptimizationResult,
     Portfolio,
     SentimentThresholdStrategy,
     Side,
+    StrategyComparator,
     StrategyOptimizer,
+    StrategyRun,
     Trade,
     TrialResult,
+    compute_metrics,
 )
 
 # --------------------------------------------------------------------------- #
@@ -252,9 +258,11 @@ __all__ = [
     # Analysis
     "CorrelationAnalyzer", "CorrelationRow", "daily_mean_sentiment", "pearson",
     # Strategy / Backtester
-    "Side", "Trade", "Portfolio", "SentimentThresholdStrategy",
+    "Side", "Trade", "Portfolio", "SentimentThresholdStrategy", "BuyAndHoldStrategy",
     "DataLoader", "MarketDataPoint",
     "Backtester", "InsufficientSignalsError",
+    "StrategyComparator", "ComparisonResult", "StrategyRun",
+    "METRIC_KEYS", "compute_metrics",
     "StrategyOptimizer", "OptimizationResult", "TrialResult", "DEFAULT_COARSE_GRID",
     # Pipeline
     "Pipeline", "FetchStats",

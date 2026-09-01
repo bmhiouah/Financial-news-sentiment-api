@@ -42,6 +42,7 @@ for the interactive OpenAPI documentation.
 | `GET`  | `/equities/count` | Total tickers in DB |
 | `GET`  | `/pipeline/status` | Current DB coverage (news/prices/sentiment rows) |
 | `POST` | `/pipeline/run` | Run the fetch + sentiment pipeline for selected symbols + date range |
+| `POST` | `/backtest/compare` | Run the Simple and Benchmark strategies on one equity and compare 4 metrics |
 
 The `POST /pipeline/run` body:
 ```json
@@ -135,8 +136,10 @@ Open `notebooks/demo.ipynb` to inspect the database and visualize price lines wi
 │   │           ├── data.py        # DataLoader, MarketDataPoint
 │   │           ├── portfolio.py   # Portfolio
 │   │           ├── trade.py       # Trade, Side
-│   │           ├── strategy.py    # SentimentThresholdStrategy
+│   │           ├── strategy.py    # SentimentThresholdStrategy, BuyAndHoldStrategy
 │   │           ├── backtester.py  # Backtester
+│   │           ├── metrics.py     # total return / CAGR / max drawdown / Sharpe
+│   │           ├── comparison.py  # StrategyComparator (Simple vs Benchmark)
 │   │           └── optimizer.py   # StrategyOptimizer
 ├── main.py                    # single entry point
 ├── requirements.txt
@@ -200,6 +203,47 @@ The `notebooks/demo.ipynb` notebook contains a worked example: it picks a
 random existing equity, runs the strategy, displays the enriched DataFrame,
 and plots `virtual_capital` over time with a secondary panel showing the
 number of open long/short trades per tick.
+
+## Strategy Comparison (Simple vs Benchmark)
+
+The **Analyse** tab compares the existing sentiment strategy against a
+**Buy & Hold** benchmark on a single equity. `StrategyComparator` loads the
+price/sentiment series **once** and hands the same DataFrame to both
+backtests, so the two runs always share the data, the window, the starting
+capital, the close prices and the end-of-backtest liquidation.
+
+| | Simple Strategy | Benchmark |
+|---|---|---|
+| Class | `SentimentThresholdStrategy` | `BuyAndHoldStrategy` |
+| Logic | long/short of `trade_size` when sentiment crosses a threshold | one long funded with 100% of the capital, on the first bar |
+| Exits | `stop_loss` / `stop_win` | none, liquidated on the last bar |
+
+Four metrics are computed by `strategy/metrics.py` from each daily equity
+curve (`virtual_capital`): **Total Return**, **CAGR**, **Max Drawdown**
+(negative) and **Sharpe Ratio** (annualised, risk-free rate 0).
+
+```python
+from financial_sentiment import StrategyComparator
+
+result = StrategyComparator().compare(
+    "AAPL",
+    initial_capital=100, trade_size=20,
+    stop_loss=-0.05, stop_win=0.10,
+    buy_threshold=0.2, sell_threshold=-0.2,
+)
+for run in result.runs:
+    print(run.name, run.final_capital, run.metrics)
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/backtest/compare \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "AAPL", "params": {"initial_capital": 100, "trade_size": 20}}'
+```
+
+Note: the benchmark is fully invested, while the Simple Strategy only
+deploys `trade_size` when a signal fires and holds cash otherwise — that
+difference in exposure is exactly what the drawdown and Sharpe columns show.
 
 ## Strategy Parameter Optimisation
 

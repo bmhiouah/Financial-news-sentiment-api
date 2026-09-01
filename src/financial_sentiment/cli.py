@@ -20,8 +20,9 @@ def _parse_args(argv: Sequence[str] = None) -> argparse.Namespace:
                         help="Run FinBERT sentiment on fetched headlines")
     parser.add_argument("--source", choices=("openbb", "finnhub", "both"),
                         default="both", help="News source (default: both)")
-    parser.add_argument("--finnhub-sources", nargs="+", default=["CNBC"],
-                        help="Sources to keep for Finnhub (default: CNBC)")
+    parser.add_argument("--finnhub-sources", nargs="+", default=None,
+                        help="Restrict Finnhub to these publishers, e.g. CNBC Reuters "
+                             "(default: keep every source)")
     parser.add_argument("--force-refresh", action="store_true",
                         help="Re-fetch even when DB already covers the window")
     return parser.parse_args(argv)

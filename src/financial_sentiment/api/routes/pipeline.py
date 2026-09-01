@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -33,6 +34,7 @@ def pipeline_status(repo=Depends(get_repository)) -> dict:
 def run_pipeline(
     request: PipelineRunRequest,
     pipeline=Depends(get_pipeline),
+    repo=Depends(get_repository),
 ) -> PipelineRunResponse:
     """Run the full fetch + sentiment pipeline for the selected symbols.
 
@@ -47,13 +49,15 @@ def run_pipeline(
     end = datetime.combine(request.end_date, datetime.min.time())
 
     sources = tuple(request.sources) if request.sources else ("openbb",)
+    # An empty list is as good as "no filter": keep every publisher.
+    finnhub_sources = request.finnhub_sources or None
 
     raw_results = pipeline.run(
         symbols=request.symbols,
         start=start,
         end=end,
         sources=sources,
-        finnhub_sources=request.finnhub_sources,
+        finnhub_sources=finnhub_sources,
         force_refresh=request.force_refresh,
         analyze=request.analyze,
     )
@@ -63,10 +67,42 @@ def run_pipeline(
         for name, stats in raw_results.items()
     }
 
+    warnings = list(pipeline.warnings)
+    warnings.extend(_selectability_warnings(
+        repo, request.symbols,
+        start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"),
+    ))
+
     total_fetched = sum(s.fetched for s in results.values())
     total_saved = sum(s.saved for s in results.values())
+    total_new = sum(s.new for s in results.values())
     summary = (
-        f"Pipeline run complete: {total_fetched} items fetched, "
-        f"{total_saved} saved across {len(request.symbols)} symbol(s)."
+        f"Pipeline run complete: {total_fetched} items fetched "
+        f"({total_new} new), {total_saved} saved across "
+        f"{len(request.symbols)} symbol(s)."
     )
-    return PipelineRunResponse(results=results, summary=summary)
+    return PipelineRunResponse(results=results, summary=summary,
+                               warnings=warnings)
+
+
+def _selectability_warnings(repo, symbols, start: str, end: str) -> List[str]:
+    """Flag symbols the Analyse tab will still refuse to show.
+
+    Analyse only lists symbols having both a price bar and a scored news row,
+    so anything missing either side silently disappears from the UI.
+    """
+    out: List[str] = []
+    for symbol in symbols:
+        prices = repo.coverage(symbol, "prices", start=start, end=end)
+        news = repo.coverage(symbol, "news", start=start, end=end)
+        if prices.is_empty:
+            out.append(
+                f"{symbol}: no price data in [{start} -> {end}] - it will not "
+                f"be selectable in Analyse until prices are available."
+            )
+        elif news.is_empty:
+            out.append(
+                f"{symbol}: no news in [{start} -> {end}] - it will not be "
+                f"selectable in Analyse until articles are available."
+            )
+    return out

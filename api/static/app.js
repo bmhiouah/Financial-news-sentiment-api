@@ -23,6 +23,12 @@ function setDefaultDates() {
 
 function toIso(d) { return d.toISOString().slice(0, 10); }
 
+// "CNBC, Reuters" -> ["CNBC", "Reuters"]; blank -> null (no source filter)
+function parseSources(raw) {
+  const list = (raw || "").split(",").map(s => s.trim()).filter(Boolean);
+  return list.length ? list : null;
+}
+
 // ---------- equities ----------
 async function loadEquities() {
   const status = document.getElementById("loading-equities");
@@ -133,6 +139,12 @@ async function runPipeline() {
     return;
   }
 
+  // Empty = keep every publisher. Restricting this to a handful of outlets is
+  // what used to throw away most of the news Finnhub actually returns.
+  const finnhubSources = parseSources(
+    document.getElementById("finnhub-sources").value
+  );
+
   const body = {
     symbols: [...selected],
     start_date: startDate,
@@ -140,7 +152,7 @@ async function runPipeline() {
     sources: sources,
     analyze: document.getElementById("analyze").checked,
     force_refresh: document.getElementById("force-refresh").checked,
-    finnhub_sources: ["CNBC"],
+    finnhub_sources: finnhubSources,
   };
 
   btn.disabled = true;
@@ -156,9 +168,16 @@ async function runPipeline() {
     if (!resp.ok) throw new Error(data.detail || resp.statusText);
 
     const detail = Object.entries(data.results)
-      .map(([name, s]) => `${name}: fetched=${s.fetched} saved=${s.saved} scored=${s.scored}`)
+      .map(([name, s]) => `${name}: fetched=${s.fetched} new=${s.new} saved=${s.saved}`)
       .join(" | ");
     showStatus(status, "success", `${data.summary}  (${detail})`);
+
+    const warnings = data.warnings || [];
+    if (warnings.length) {
+      showWarnings(warnings);
+    } else {
+      document.getElementById("run-warnings").innerHTML = "";
+    }
   } catch (e) {
     showStatus(status, "error", `Pipeline failed: ${e.message}`);
   } finally {
@@ -169,4 +188,19 @@ async function runPipeline() {
 function showStatus(el, type, msg) {
   el.className = `status ${type}`;
   el.textContent = msg;
+}
+
+function showWarnings(warnings) {
+  const box = document.getElementById("run-warnings");
+  if (!box) return;
+  box.innerHTML =
+    `<strong>Warnings</strong><ul>` +
+    warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("") +
+    `</ul>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
 }

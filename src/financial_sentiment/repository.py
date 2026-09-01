@@ -9,7 +9,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable, Iterator, List, Optional
+from typing import Iterable, Iterator, List, Optional, Set
 
 from .config import SETTINGS
 from .domain import NewsItem, PriceBar, Coverage, Equity
@@ -176,6 +176,29 @@ class Repository:
             cur = conn.cursor()
             cur.executemany(sql, rows)
             return cur.rowcount
+
+    def existing_urls(self, symbol: str, table: str,
+                      urls: Iterable[str]) -> Set[str]:
+        """Subset of `urls` already stored for `symbol` in `table`.
+
+        Lets the pipeline skip re-scoring articles it already has, which keeps
+        re-fetching the same window cheap.
+        """
+        urls = [u for u in urls if u]
+        if not urls:
+            return set()
+        found: Set[str] = set()
+        with self._conn() as conn:
+            for i in range(0, len(urls), 400):
+                chunk = urls[i:i + 400]
+                placeholders = ",".join("?" * len(chunk))
+                rows = conn.execute(
+                    f"SELECT url FROM {table} "
+                    f"WHERE symbol = ? AND url IN ({placeholders})",
+                    (symbol, *chunk),
+                ).fetchall()
+                found.update(r[0] for r in rows)
+        return found
 
     def update_sentiment(self, url: str, label: Optional[str],
                          score: Optional[float],
