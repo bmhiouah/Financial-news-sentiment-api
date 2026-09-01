@@ -67,8 +67,11 @@
     <!-- ============ Price + sentiment ============ -->
     <section class="card" data-requires="multi">
       <h2>Price + News Sentiment</h2>
-      <p class="hint">Each marker is a day with news. Size = |score|, color = label.</p>
+      <p class="hint">Each marker is a day with news. Size = |score|, color = label. Click a marker to see the news below.</p>
       <div id="price-sentiment" style="min-height:500px;"></div>
+      <div id="news-panel" class="news-panel" style="margin-top: 16px;">
+        <div class="news-panel-empty">Click a sentiment marker to see the news for that day.</div>
+      </div>
     </section>
 
     <!-- ============ Backtest ============ -->

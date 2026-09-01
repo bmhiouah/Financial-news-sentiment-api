@@ -246,7 +246,11 @@ function renderPriceSentiment(series) {
     return;
   }
   const traces = [];
-  for (const s of series) {
+  // Track which trace index is a sentiment marker so the click handler
+  // can tell lines from markers.
+  const markerTraceIdx = new Set();
+  for (let i = 0; i < series.length; i++) {
+    const s = series[i];
     traces.push({
       x: s.points.map(p => p.date),
       y: s.points.map(p => p.close),
@@ -260,6 +264,8 @@ function renderPriceSentiment(series) {
       .map((p, i) => ({ ...p, idx: i }))
       .filter(p => p.sentiment_score != null);
     if (withSent.length) {
+      const traceIdx = traces.length;
+      markerTraceIdx.add(traceIdx);
       traces.push({
         x: withSent.map(p => p.date),
         y: withSent.map(p => p.close),
@@ -272,8 +278,8 @@ function renderPriceSentiment(series) {
           opacity: 0.9,
         },
         text: withSent.map(p => p.headline || ""),
-        customdata: withSent.map(p => [p.sentiment_label, p.sentiment_score]),
-        hovertemplate: `<b>${s.symbol}</b> %{x|%Y-%m-%d}<br>Close: %{y:.2f}<br>Sentiment: %{customdata[0]} (%{customdata[1]:.2f})<br><i>%{text}</i><extra></extra>`,
+        customdata: withSent.map(p => [s.symbol, p.sentiment_label, p.sentiment_score]),
+        hovertemplate: `<b>${s.symbol}</b> %{x|%Y-%m-%d}<br>Close: %{y:.2f}<br>Sentiment: %{customdata[1]} (%{customdata[2]:.2f})<br><i>%{text}</i><extra></extra>`,
       });
     }
   }
@@ -286,6 +292,133 @@ function renderPriceSentiment(series) {
     legend: { orientation: "h", y: -0.15 },
   };
   Plotly.newPlot("price-sentiment", traces, layout, { responsive: true });
+
+  // Click handler: only respond to clicks on sentiment marker traces
+  const el = document.getElementById("price-sentiment");
+  el.on("plotly_click", (ev) => {
+    if (!ev.points || !ev.points.length) return;
+    const pt = ev.points[0];
+    if (!markerTraceIdx.has(pt.curveNumber)) return;  // ignore line clicks
+    const symbol = pt.customdata && pt.customdata[0];
+    const date = pt.x;
+    if (symbol && date) loadNewsForDay(symbol, date);
+  });
+  // Reset the news panel on each redraw
+  resetNewsPanel();
+}
+
+// ---------- news panel (click handler on Price + Sentiment) ----------
+function resetNewsPanel() {
+  const panel = document.getElementById("news-panel");
+  if (panel) {
+    panel.innerHTML = `<div class="news-panel-empty">Click a sentiment marker to see the news for that day.</div>`;
+  }
+}
+
+const newsCache = new Map();
+
+async function loadNewsForDay(symbol, date) {
+  const panel = document.getElementById("news-panel");
+  panel.innerHTML = `<div class="news-panel-empty">Loading news for ${symbol}…</div>`;
+  const cacheKey = symbol;
+  let allNews;
+  if (newsCache.has(cacheKey)) {
+    allNews = newsCache.get(cacheKey);
+  } else {
+    try {
+      const resp = await fetch(`${API}/analysis/news?symbol=${encodeURIComponent(symbol)}`);
+      const data = await resp.json();
+      allNews = data.items || [];
+      newsCache.set(cacheKey, allNews);
+    } catch (e) {
+      panel.innerHTML = `<div class="status error" style="display:block;">Failed to load news: ${e.message}</div>`;
+      return;
+    }
+  }
+  // Filter to the clicked date
+  const dateStr = String(date).slice(0, 10);
+  const items = allNews.filter(n => String(n.date).slice(0, 10) === dateStr);
+  renderNewsPanel(symbol, dateStr, items);
+}
+
+function renderNewsPanel(symbol, dateStr, items) {
+  const panel = document.getElementById("news-panel");
+  if (!items.length) {
+    panel.innerHTML = `
+      <h4>${symbol} — ${dateStr}</h4>
+      <div class="news-meta">No news found for this date.</div>
+    `;
+    return;
+  }
+  const html = `
+    <h4>${symbol} — ${dateStr}</h4>
+    <div class="news-meta">${items.length} headline${items.length > 1 ? 's' : ''}</div>
+    ${items.map(n => {
+      const label = (n.sentiment_label || 'neutral').toLowerCase();
+      const labelCls = label === 'positive' ? 'label-pos' : label === 'negative' ? 'label-neg' : 'label-neu';
+      const score = n.finbert_score != null ? n.finbert_score.toFixed(2) : '—';
+      const cleanText = n.text ? cleanNewsText(n.text) : '';
+      return `
+        <div class="news-item">
+          <div class="headline">${escapeHtml(n.headline || '(no headline)')}</div>
+          <div class="meta">
+            <span>${escapeHtml(n.source || 'unknown')}</span>
+            <span class="${labelCls}">${label} (${score})</span>
+          </div>
+          ${cleanText ? `<div class="summary">${escapeHtml(cleanText)}</div>` : ''}
+        </div>
+      `;
+    }).join('')}
+  `;
+  panel.innerHTML = html;
+}
+
+// Strip HTML tags, decode entities, remove boilerplate, keep only the core text.
+function cleanNewsText(raw) {
+  if (!raw) return '';
+  let text = String(raw);
+  // Strip HTML tags
+  text = text.replace(/<[^>]+>/g, ' ');
+  // Decode common HTML entities
+  text = text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#\d+;/g, '');
+  // Remove boilerplate / promotional patterns
+  const boilerplate = [
+    /Read Also:.*$/gim,
+    /Photo Courtesy:.*$/gim,
+    /\[.*?\]\([^)]+\)/g,         // markdown links [text](url)
+    /https?:\/\/\S+/g,           // raw URLs
+  ];
+  for (const pat of boilerplate) {
+    text = text.replace(pat, '');
+  }
+  // Collapse whitespace
+  text = text.replace(/\s+/g, ' ').trim();
+  // Take only the first 2 sentences (core news content)
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  text = sentences.slice(0, 2).join('').trim();
+  if (text.length > 400) {
+    text = text.slice(0, 400).trim();
+    const lastSpace = text.lastIndexOf(' ');
+    if (lastSpace > 200) text = text.slice(0, lastSpace) + '…';
+  }
+  return text;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ---------- distribution heatmaps (with percentage text on each cell) ----------
@@ -298,24 +431,42 @@ function renderDistributionHeatmaps(data) {
   }
   // One heatmap per symbol, stacked vertically.  Each cell shows the % of data
   // points in that bucket (text overlay), matching notebooks/demo.ipynb.
+  // We use the original range labels ("0.123 to 0.456") and a tall figure
+  // (450px per row, like the notebook) so they fit without overlapping.
   const n = data.rows.length;
   const traces = [];
   for (let idx = 0; idx < n; idx++) {
     const r = data.rows[idx];
     const xa = `x${idx + 1}`;
     const ya = `y${idx + 1}`;
-    // Build percentage text for each cell (e.g. "12.3%"), empty string for 0
-    const text = r.heatmap_z.map(row => row.map(v => v > 0 ? v.toFixed(1) + "%" : ""));
-    // Shorter x labels (midpoint of each bucket) to avoid the overlap the
-    // notebook's "0.123 to 0.456" labels cause in plotly.js.
-    const xShort = r.heatmap_x_labels.map(parseBucketMid);
-    const yShort = r.heatmap_y_labels.map(parseBucketMid);
+    // Build percentage text for each cell (e.g. "12.3%" or "0.0%"), matching
+    // notebooks/demo.ipynb which shows the percentage on every cell.
+    const text = r.heatmap_z.map(row => row.map(v => v.toFixed(1) + "%"));
     traces.push({
       type: "heatmap",
       z: r.heatmap_z,
-      x: xShort,
-      y: yShort,
-      colorscale: "Blues",
+      x: r.heatmap_x_labels,
+      y: r.heatmap_y_labels,
+      // Custom white-to-blue colorscale (matches plotly.py's "Blues" but
+      // defined explicitly).  Darkest stop is rgb(49, 130, 189) — clearly
+      // "dark blue" but not near-black, so the percentage text stays readable
+      // and the max cell doesn't visually dominate the plot.
+      colorscale: [
+        [0.0,  "rgb(247, 251, 255)"],
+        [0.125, "rgb(222, 235, 247)"],
+        [0.25,  "rgb(198, 219, 239)"],
+        [0.375, "rgb(173, 205, 231)"],
+        [0.5,   "rgb(148, 191, 223)"],
+        [0.625, "rgb(123, 177, 215)"],
+        [0.75,  "rgb(98, 163, 207)"],
+        [0.875, "rgb(73, 149, 199)"],
+        [1.0,   "rgb(49, 130, 189)"],
+      ],
+      zmin: 0,                    // 0% maps to white
+      // zmax intentionally NOT set: Plotly auto-scales to the actual data
+      // maximum, so the gradient always spans the full data range.  If we
+      // hard-coded zmax: 100, most cells would look pale (since the data
+      // max is usually ~10-20%).
       showscale: idx === 0,
       colorbar: idx === 0 ? { title: { text: "%" }, len: 0.4, y: 0.8 } : undefined,
       xaxis: xa, yaxis: ya,
@@ -330,31 +481,25 @@ function renderDistributionHeatmaps(data) {
     grid: { rows: n, columns: 1, pattern: "independent" },
     showlegend: false,
     height: Math.max(400, 200 * n + 80),
-    margin: { l: 90, r: 30, t: 60, b: 50 },
+    margin: { l: 110, r: 30, t: 60, b: 50 },
   };
   for (let idx = 0; idx < n; idx++) {
     const isLast = idx === n - 1;
     const xa = `xaxis${idx + 1}`;
     const ya = `yaxis${idx + 1}`;
     layout[xa] = {
+      tickangle: -45,
       tickfont: { size: 9 },
-      nticks: 6,
-      title: isLast ? { text: "FinBERT score" } : undefined,
+      automargin: true,
+      title: isLast ? { text: "FinBERT score bucket" } : undefined,
     };
     layout[ya] = {
       tickfont: { size: 9 },
-      nticks: 8,
-      title: isLast ? { text: "Log return" } : undefined,
+      automargin: true,
+      title: isLast ? { text: "Log return bucket" } : undefined,
     };
   }
   Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
-}
-
-// Parse a bucket label like "0.123 to 0.456" into its midpoint as a number.
-function parseBucketMid(label) {
-  const m = String(label).match(/(-?\d*\.?\d+)\s*to\s*(-?\d*\.?\d+)/);
-  if (!m) return label;
-  return (parseFloat(m[1]) + parseFloat(m[2])) / 2;
 }
 
 // ---------- correlation bars per symbol ----------

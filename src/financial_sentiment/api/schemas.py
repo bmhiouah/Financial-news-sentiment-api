@@ -110,6 +110,23 @@ class FinBertVsLlmResponse(BaseModel):
     pearson: Optional[float] = None
 
 
+class NewsItemOut(BaseModel):
+    date: str
+    headline: str
+    text: str = ""
+    source: str = ""
+    url: str = ""
+    sentiment_label: Optional[str] = None
+    finbert_score: Optional[float] = None
+    llm_label: Optional[str] = None
+    llm_score: Optional[float] = None
+
+
+class NewsForSymbolResponse(BaseModel):
+    symbol: str
+    items: List[NewsItemOut]
+
+
 # --------------------------------------------------------------------------- #
 # Distribution (2D histogram + correlation bars)
 # --------------------------------------------------------------------------- #

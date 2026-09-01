@@ -21,6 +21,8 @@ from ..schemas import (
     DistributionRow,
     FinBertVsLlmPoint,
     FinBertVsLlmResponse,
+    NewsForSymbolResponse,
+    NewsItemOut,
     PriceSentimentPoint,
     PriceSentimentSeries,
 )
@@ -326,3 +328,33 @@ def distribution(
         if row is not None:
             rows.append(row)
     return DistributionResponse(return_type=return_type, rows=rows)
+
+
+# --------------------------------------------------------------------------- #
+# News (for the click-to-show feature on Price + Sentiment)
+# --------------------------------------------------------------------------- #
+
+@router.get("/news", response_model=NewsForSymbolResponse)
+def news_for_symbol(
+    symbol: str = Query(..., description="Symbol to fetch news for"),
+    repo=Depends(get_repository),
+) -> NewsForSymbolResponse:
+    """Return all news rows for a single symbol (used by the click handler)."""
+    all_news = repo.fetch_news(with_sentiment_only=False)
+    items = [
+        NewsItemOut(
+            date=n.date,
+            headline=n.headline or "",
+            text=n.text or "",
+            source=n.source or "",
+            url=n.url or "",
+            sentiment_label=n.sentiment_label,
+            finbert_score=n.finbert_score,
+            llm_label=n.llm_label,
+            llm_score=n.llm_score,
+        )
+        for n in all_news
+        if n.symbol == symbol
+    ]
+    items.sort(key=lambda i: (i.date, -1 if i.finbert_score is None else i.finbert_score), reverse=True)
+    return NewsForSymbolResponse(symbol=symbol, items=items)
