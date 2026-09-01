@@ -43,24 +43,25 @@
       </div>
     </section>
 
-    <!-- ============ Distribution + correlation bars ============ -->
+    <!-- ============ Distribution by Equity ============ -->
     <section class="card" data-requires="multi">
       <div class="section-header">
-        <h2>Distribution &amp; Correlation by Equity</h2>
+        <h2>Distribution by Equity</h2>
         <div class="rt-slicer" id="rt-slicer">
           <button class="btn-sm rt-btn active" data-rt="daily">Daily</button>
           <button class="btn-sm rt-btn" data-rt="weekly">Weekly</button>
           <button class="btn-sm rt-btn" data-rt="monthly">Monthly</button>
         </div>
       </div>
-      <p class="hint">Left: 12×12 sentiment × log-return heatmap (% per bin). Right: Pearson correlation bars. Slicer only affects this chart.</p>
+      <p class="hint">12×12 sentiment × log-return heatmap. Each cell shows the % of data points in that bucket. Slicer only affects this chart.</p>
       <div id="distribution" style="min-height:500px;"></div>
     </section>
 
-    <!-- ============ Correlation table ============ -->
+    <!-- ============ Correlation by Equity ============ -->
     <section class="card" data-requires="multi">
-      <h2>Correlation: Sentiment vs Returns</h2>
-      <div id="corr-table"></div>
+      <h2>Correlation by Equity</h2>
+      <p class="hint">Pearson correlation of mean-daily FinBERT sentiment vs daily/weekly/monthly returns, per symbol.</p>
+      <div id="correlation-bars" style="min-height:400px;"></div>
     </section>
 
     <!-- ============ Price + sentiment ============ -->

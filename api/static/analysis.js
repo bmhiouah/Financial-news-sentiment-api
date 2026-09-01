@@ -89,27 +89,18 @@ async function loadAll() {
   // the others (Promise.all would reject on the first failure).
   await Promise.allSettled([
     loadDistribution(),
-    loadCorrelation(),
     loadPriceSentiment(),
   ]);
 }
 
 function clearAllCharts() {
-  document.getElementById("corr-table").innerHTML = "";
   Plotly.purge("price-sentiment");
   Plotly.purge("distribution");
+  Plotly.purge("correlation-bars");
   document.getElementById("bt-plot").innerHTML = "";
   document.getElementById("bt-summary").innerHTML = "";
   document.getElementById("opt-card").style.display = "none";
   lastOptimization = null;
-}
-
-// ---------- correlation ----------
-async function loadCorrelation() {
-  const params = [...selected].map(s => `symbol=${encodeURIComponent(s)}`).join("&");
-  const resp = await fetch(`${API}/analysis/correlation?${params}`);
-  const data = await resp.json();
-  renderCorrelationTable(data.rows);
 }
 
 // ---------- price + sentiment ----------
@@ -119,11 +110,12 @@ async function loadPriceSentiment() {
   renderPriceSentiment(series);
 }
 
-// ---------- distribution ----------
+// ---------- distribution (heatmaps) + correlation bars (driven by same data) ----------
 async function loadDistribution() {
   const resp = await fetch(`${API}/analysis/distribution?${symbolParams()}&return_type=${currentReturnType}`);
   const data = await resp.json();
-  renderDistribution(data);
+  renderDistributionHeatmaps(data);
+  renderCorrelationBars(data);
 }
 
 // ---------- backtest ----------
@@ -247,39 +239,6 @@ function renderList(filter) {
 
 function fmt(v) { return v == null ? "N/A" : v.toFixed(3); }
 
-function renderCorrelationTable(rows) {
-  if (!rows.length) {
-    document.getElementById("corr-table").innerHTML = "<p class='loading'>No data for selected symbols.</p>";
-    return;
-  }
-  const html = `
-    <table class="corr-table">
-      <thead><tr><th>Symbol</th><th>Daily</th><th>Weekly</th><th>Monthly</th><th>N</th></tr></thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr>
-            <td><b>${r.symbol}</b></td>
-            <td class="${corrClass(r.daily)}">${fmt(r.daily)}</td>
-            <td class="${corrClass(r.weekly)}">${fmt(r.weekly)}</td>
-            <td class="${corrClass(r.monthly)}">${fmt(r.monthly)}</td>
-            <td>${r.n}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
-  document.getElementById("corr-table").innerHTML = html;
-}
-
-function corrClass(v) {
-  if (v == null) return "";
-  if (v > 0.3) return "corr-pos-strong";
-  if (v > 0) return "corr-pos";
-  if (v < -0.3) return "corr-neg-strong";
-  if (v < 0) return "corr-neg";
-  return "";
-}
-
 function renderPriceSentiment(series) {
   if (!series.length) {
     Plotly.purge("price-sentiment");
@@ -329,36 +288,89 @@ function renderPriceSentiment(series) {
   Plotly.newPlot("price-sentiment", traces, layout, { responsive: true });
 }
 
-function renderDistribution(data) {
+// ---------- distribution heatmaps (with percentage text on each cell) ----------
+function renderDistributionHeatmaps(data) {
   const el = document.getElementById("distribution");
   if (!data.rows.length) {
     Plotly.purge(el);
     el.innerHTML = "<p class='loading'>Not enough data for distribution plot (need >= 5 sentiment observations per symbol).</p>";
     return;
   }
-  // Build n rows x 2 columns: heatmap (col 1) + correlation bars (col 2) per symbol.
-  // We assign explicit xaxis/yaxis IDs to each trace so Plotly places them
-  // in the right cell of the grid.  This is the approach from the official
-  // plotly.js docs (https://plotly.com/javascript/subplots/) and works with
-  // the standard `plotly.min.js` bundle (no `makeSubplots` import needed).
+  // One heatmap per symbol, stacked vertically.  Each cell shows the % of data
+  // points in that bucket (text overlay), matching notebooks/demo.ipynb.
   const n = data.rows.length;
   const traces = [];
   for (let idx = 0; idx < n; idx++) {
     const r = data.rows[idx];
-    const xa = `x${idx * 2 + 1}`;  // x1, x3, x5, ...
-    const xb = `x${idx * 2 + 2}`;  // x2, x4, x6, ...
-    const ya = `y${idx * 2 + 1}`;
-    const yb = `y${idx * 2 + 2}`;
+    const xa = `x${idx + 1}`;
+    const ya = `y${idx + 1}`;
+    // Build percentage text for each cell (e.g. "12.3%"), empty string for 0
+    const text = r.heatmap_z.map(row => row.map(v => v > 0 ? v.toFixed(1) + "%" : ""));
+    // Shorter x labels (midpoint of each bucket) to avoid the overlap the
+    // notebook's "0.123 to 0.456" labels cause in plotly.js.
+    const xShort = r.heatmap_x_labels.map(parseBucketMid);
+    const yShort = r.heatmap_y_labels.map(parseBucketMid);
     traces.push({
       type: "heatmap",
       z: r.heatmap_z,
-      x: r.heatmap_x_labels,
-      y: r.heatmap_y_labels,
+      x: xShort,
+      y: yShort,
       colorscale: "Blues",
-      showscale: false,
+      showscale: idx === 0,
+      colorbar: idx === 0 ? { title: { text: "%" }, len: 0.4, y: 0.8 } : undefined,
       xaxis: xa, yaxis: ya,
-      hovertemplate: "Score: %{x}<br>Return: %{y}<br>Pct: %{z:.1f}%<extra></extra>",
+      text: text,
+      texttemplate: "%{text}",
+      textfont: { size: 9, color: "black" },
+      hovertemplate: `Score: %{x}<br>Return: %{y}<br>Pct: %{z:.1f}%<extra></extra>`,
     });
+  }
+  const layout = {
+    title: { text: `Distribution by Equity (return = ${data.return_type})` },
+    grid: { rows: n, columns: 1, pattern: "independent" },
+    showlegend: false,
+    height: Math.max(400, 200 * n + 80),
+    margin: { l: 90, r: 30, t: 60, b: 50 },
+  };
+  for (let idx = 0; idx < n; idx++) {
+    const isLast = idx === n - 1;
+    const xa = `xaxis${idx + 1}`;
+    const ya = `yaxis${idx + 1}`;
+    layout[xa] = {
+      tickfont: { size: 9 },
+      nticks: 6,
+      title: isLast ? { text: "FinBERT score" } : undefined,
+    };
+    layout[ya] = {
+      tickfont: { size: 9 },
+      nticks: 8,
+      title: isLast ? { text: "Log return" } : undefined,
+    };
+  }
+  Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
+}
+
+// Parse a bucket label like "0.123 to 0.456" into its midpoint as a number.
+function parseBucketMid(label) {
+  const m = String(label).match(/(-?\d*\.?\d+)\s*to\s*(-?\d*\.?\d+)/);
+  if (!m) return label;
+  return (parseFloat(m[1]) + parseFloat(m[2])) / 2;
+}
+
+// ---------- correlation bars per symbol ----------
+function renderCorrelationBars(data) {
+  const el = document.getElementById("correlation-bars");
+  if (!data.rows.length) {
+    Plotly.purge(el);
+    el.innerHTML = "<p class='loading'>No correlation data for selected symbols.</p>";
+    return;
+  }
+  const n = data.rows.length;
+  const traces = [];
+  for (let idx = 0; idx < n; idx++) {
+    const r = data.rows[idx];
+    const xa = `x${idx + 1}`;
+    const ya = `y${idx + 1}`;
     traces.push({
       type: "bar",
       x: r.correlation.map(c => c.name),
@@ -366,41 +378,23 @@ function renderDistribution(data) {
       marker: { color: ["#1f77b4", "#ff7f0e", "#2ca02c"] },
       text: r.correlation.map(c => c.value == null ? "N/A" : c.value.toFixed(3)),
       textposition: "outside",
-      xaxis: xb, yaxis: yb,
+      xaxis: xa, yaxis: ya,
       showlegend: false,
       hovertemplate: "%{x}: %{y:.3f}<extra></extra>",
     });
   }
   const layout = {
-    title: { text: `Distribution & Correlation by Equity (return = ${data.return_type})` },
-    grid: { rows: n, columns: 2, pattern: "independent" },
+    title: { text: "Correlation by Equity" },
+    grid: { rows: n, columns: 1, pattern: "independent" },
     showlegend: false,
-    height: Math.max(400, 240 * n + 100),
-    margin: { l: 70, r: 30, t: 60, b: 50 },
+    height: Math.max(300, 160 * n + 80),
+    margin: { l: 60, r: 30, t: 60, b: 40 },
   };
-  // Configure axes: per-cell titles via xaxis{N} keys
   for (let idx = 0; idx < n; idx++) {
     const isLast = idx === n - 1;
-    const xa = `xaxis${idx * 2 + 1}`;
-    const xb = `xaxis${idx * 2 + 2}`;
-    const ya = `yaxis${idx * 2 + 1}`;
-    const yb = `yaxis${idx * 2 + 2}`;
-    layout[xa] = {
-      tickangle: -45, tickfont: { size: 9 },
-      title: isLast ? { text: "FinBERT score bucket" } : undefined,
-    };
-    layout[ya] = {
-      tickfont: { size: 9 },
-      title: isLast ? { text: "Log return bucket" } : undefined,
-    };
-    layout[xb] = {
-      tickfont: { size: 9 },
-      title: isLast ? { text: "Return type" } : undefined,
-    };
-    layout[yb] = {
-      range: [-1, 1],
-      title: isLast ? { text: "Correlation" } : undefined,
-    };
+    const ya = `yaxis${idx + 1}`;
+    layout[ya] = { range: [-1, 1], title: isLast ? { text: "Correlation" } : undefined };
+    layout[`xaxis${idx + 1}`] = { title: isLast ? { text: "Return type" } : undefined };
   }
   Plotly.newPlot(el, traces, layout, { responsive: true, displayModeBar: false });
 }
