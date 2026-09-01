@@ -37,16 +37,20 @@ from .providers import (
     PriceProvider,
 )
 from .repository import Repository
-from .sentiment import FinBERTScorer, SentimentScorer, VLLMScorer
+from .sentiment import FinBERTScorer, GroqSentimentScorer, SentimentScorer, VLLMScorer
 from .strategy import (  # noqa: E402
+    DEFAULT_COARSE_GRID,
     Backtester,
     DataLoader,
     InsufficientSignalsError,
     MarketDataPoint,
+    OptimizationResult,
     Portfolio,
     SentimentThresholdStrategy,
     Side,
+    StrategyOptimizer,
     Trade,
+    TrialResult,
 )
 
 # --------------------------------------------------------------------------- #
@@ -206,6 +210,11 @@ def _item_to_dict(i: NewsItem) -> dict:
         "sentiment_label": i.sentiment_label,
         "confidence": i.confidence,
         "finbert_score": i.finbert_score,
+        "llm_label": i.llm_label,
+        "llm_positive": i.llm_positive,
+        "llm_negative": i.llm_negative,
+        "llm_neutral": i.llm_neutral,
+        "llm_score": i.llm_score,
     }
 
 
@@ -237,13 +246,14 @@ __all__ = [
     "NewsProvider", "PriceProvider",
     "OpenBBNewsProvider", "OpenBBPriceProvider", "FinnhubNewsProvider",
     # Scorers
-    "SentimentScorer", "FinBERTScorer", "VLLMScorer",
+    "SentimentScorer", "FinBERTScorer", "VLLMScorer", "GroqSentimentScorer",
     # Analysis
     "CorrelationAnalyzer", "CorrelationRow", "daily_mean_sentiment", "pearson",
     # Strategy / Backtester
     "Side", "Trade", "Portfolio", "SentimentThresholdStrategy",
     "DataLoader", "MarketDataPoint",
     "Backtester", "InsufficientSignalsError",
+    "StrategyOptimizer", "OptimizationResult", "TrialResult", "DEFAULT_COARSE_GRID",
     # Pipeline
     "Pipeline", "FetchStats",
     # Legacy free functions

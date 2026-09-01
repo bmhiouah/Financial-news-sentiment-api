@@ -155,6 +155,51 @@ random existing equity, runs the strategy, displays the enriched DataFrame,
 and plots `virtual_capital` over time with a secondary panel showing the
 number of open long/short trades per tick.
 
+## Strategy Parameter Optimisation
+
+`StrategyOptimizer` searches the `(stop_loss, stop_win, buy_threshold,
+sell_threshold)` space with a coarse grid followed by a refinement pass
+around the top-K coarse candidates. The objective is total P&L
+(`final_capital - initial_capital`) on the requested training window.
+
+```python
+from datetime import datetime
+from financial_sentiment import StrategyOptimizer
+
+result = StrategyOptimizer().optimize(
+    equity="AAPL",
+    start=datetime(2026, 7, 29),
+    end=datetime(2026, 8, 28),
+)
+print(result.best.params, result.best.pnl)
+```
+
+Exposed at the package root: `StrategyOptimizer`, `OptimizationResult`,
+`TrialResult`, `DEFAULT_COARSE_GRID`.
+
+## LLM (Groq) Sentiment Backfill
+
+`GroqSentimentScorer` produces a FinBERT-style sentiment for each
+headline (positive / negative / neutral probabilities, label, and a
+compound score in [-1, +1]). The DB stores these in dedicated
+`llm_*` columns on `news` and `finnhub_news`.
+
+Set the API key once and backfill rows that already have a FinBERT
+score but no LLM score yet:
+
+```bash
+export GROQ_API_KEY="gsk_..."   # https://console.groq.com/keys
+python scripts/score_llm.py             # score all pending rows
+python scripts/score_llm.py --limit 500 --delay 0.1   # cap + rate-limit
+```
+
+`scripts/score_llm.py` is idempotent: re-running it only scores rows
+whose `llm_score` is still NULL.
+
+The `notebooks/demo.ipynb` notebook includes a section that loads
+rows with both scores and produces a FinBERT vs LLM scatter plot,
+plus a per-symbol sign-agreement bar chart.
+
 ## Database Schema
 
 **news**

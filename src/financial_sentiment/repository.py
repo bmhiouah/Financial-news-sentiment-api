@@ -68,11 +68,13 @@ CREATE TABLE IF NOT EXISTS prices (
 _NEWS_COLUMNS = (
     "symbol", "date", "headline", "text", "source", "url",
     "sentiment_label", "confidence", "finbert_score",
+    "llm_label", "llm_positive", "llm_negative", "llm_neutral", "llm_score",
 )
 _PRICES_COLUMNS = (
     "symbol", "date", "open", "high", "low", "close", "volume",
     "daily_return", "weekly_return", "monthly_return",
 )
+_LLM_COLUMNS = ("llm_label", "llm_positive", "llm_negative", "llm_neutral", "llm_score")
 
 
 # --------------------------------------------------------------------------- #
@@ -122,6 +124,20 @@ class Repository:
             for col in ("daily_return", "weekly_return", "monthly_return"):
                 if col not in cols:
                     cur.execute(f"ALTER TABLE prices ADD COLUMN {col} REAL")
+            # Backfill LLM sentiment columns on news / finnhub_news
+            for table in ("news", "finnhub_news"):
+                existing = {
+                    r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+                for col, decl in (
+                    ("llm_label",     "TEXT"),
+                    ("llm_positive",  "REAL"),
+                    ("llm_negative",  "REAL"),
+                    ("llm_neutral",   "REAL"),
+                    ("llm_score",     "REAL"),
+                ):
+                    if col not in existing:
+                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
     # ---- news ----
 
@@ -134,6 +150,7 @@ class Repository:
             (
                 i.symbol, i.date, i.headline, i.text, i.source, i.url,
                 i.sentiment_label, i.confidence, i.finbert_score,
+                i.llm_label, i.llm_positive, i.llm_negative, i.llm_neutral, i.llm_score,
             )
             for i in items
         ]
@@ -153,19 +170,53 @@ class Repository:
                 (label, confidence, score, url),
             )
 
+    def update_llm_score(self, url: str, label: Optional[str],
+                         positive: Optional[float], negative: Optional[float],
+                         neutral: Optional[float], score: Optional[float],
+                         table: str = "news") -> None:
+        with self._conn() as conn:
+            conn.execute(
+                f"UPDATE {table} SET llm_label=?, llm_positive=?, llm_negative=?, "
+                f"llm_neutral=?, llm_score=? WHERE url=?",
+                (label, positive, negative, neutral, score, url),
+            )
+
+    def update_llm_scores_bulk(self, items: List[NewsItem], table: str = "news") -> int:
+        """Bulk-update llm_* columns by URL."""
+        if not items:
+            return 0
+        rows = [
+            (i.llm_label, i.llm_positive, i.llm_negative, i.llm_neutral, i.llm_score, i.url)
+            for i in items
+        ]
+        with self._conn() as conn:
+            conn.executemany(
+                f"UPDATE {table} SET llm_label=?, llm_positive=?, llm_negative=?, "
+                f"llm_neutral=?, llm_score=? WHERE url=?",
+                rows,
+            )
+        return len(rows)
+
     def fetch_news(self, with_sentiment_only: bool = True) -> List[NewsItem]:
-        sql = (
-            f"SELECT {_csv(_NEWS_COLUMNS)} FROM news"
-        )
+        sql = f"SELECT {_csv(_NEWS_COLUMNS)} FROM news"
         if with_sentiment_only:
             sql += " WHERE finbert_score IS NOT NULL"
         with self._conn() as conn:
             rows = conn.execute(sql).fetchall()
         return [_row_to_news(r) for r in rows]
 
+    def fetch_pending_llm(self, table: str = "news") -> List[NewsItem]:
+        """Rows that have a FinBERT score but no LLM score yet."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_csv(_NEWS_COLUMNS)} FROM {table} "
+                f"WHERE (llm_score IS NULL) "
+                f"AND headline IS NOT NULL AND headline != ''"
+            ).fetchall()
+        return [_row_to_news(r) for r in rows]
+
     def promote_finnhub_to_news(self, symbol: Optional[str] = None) -> int:
         """Copy Finnhub rows into `news`, also backfilling sentiment on duplicates."""
-        where = "WHERE f.finbert_score IS NOT NULL"
         if symbol:
             scope = " AND f.symbol = ?"
             scope_news = " AND symbol = ?"
@@ -195,9 +246,23 @@ class Repository:
                     confidence = (SELECT confidence FROM finnhub_news f
                                     WHERE f.symbol = news.symbol AND f.url = news.url),
                     finbert_score = (SELECT finbert_score FROM finnhub_news f
-                                      WHERE f.symbol = news.symbol AND f.url = news.url)
-                WHERE sentiment_label IS NULL
-                  AND EXISTS (SELECT 1 FROM finnhub_news f
+                                      WHERE f.symbol = news.symbol AND f.url = news.url),
+                    llm_label = COALESCE(news.llm_label,
+                                          (SELECT llm_label FROM finnhub_news f
+                                            WHERE f.symbol = news.symbol AND f.url = news.url)),
+                    llm_positive = COALESCE(news.llm_positive,
+                                             (SELECT llm_positive FROM finnhub_news f
+                                               WHERE f.symbol = news.symbol AND f.url = news.url)),
+                    llm_negative = COALESCE(news.llm_negative,
+                                             (SELECT llm_negative FROM finnhub_news f
+                                               WHERE f.symbol = news.symbol AND f.url = news.url)),
+                    llm_neutral = COALESCE(news.llm_neutral,
+                                            (SELECT llm_neutral FROM finnhub_news f
+                                              WHERE f.symbol = news.symbol AND f.url = news.url)),
+                    llm_score = COALESCE(news.llm_score,
+                                          (SELECT llm_score FROM finnhub_news f
+                                            WHERE f.symbol = news.symbol AND f.url = news.url))
+                WHERE EXISTS (SELECT 1 FROM finnhub_news f
                               WHERE f.symbol = news.symbol AND f.url = news.url
                                 AND f.finbert_score IS NOT NULL)
                   {scope_news}
@@ -207,7 +272,7 @@ class Repository:
         return inserted + updated
 
     def score_pending_finnhub(self, items: List[NewsItem]) -> int:
-        """Bulk-update sentiment on Finnhub rows by URL."""
+        """Bulk-update FinBERT sentiment on Finnhub rows by URL."""
         if not items:
             return 0
         rows = [
@@ -308,6 +373,8 @@ def _row_to_news(row) -> NewsItem:
         symbol=row[0], date=row[1], headline=row[2], text=row[3],
         source=row[4], url=row[5], sentiment_label=row[6],
         confidence=row[7], finbert_score=row[8],
+        llm_label=row[9], llm_positive=row[10], llm_negative=row[11],
+        llm_neutral=row[12], llm_score=row[13],
     )
 
 

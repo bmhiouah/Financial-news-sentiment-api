@@ -17,7 +17,7 @@ SOURCE_FINNHUB = "Finnhub"
 
 @dataclass
 class NewsItem:
-    """A single news headline with optional sentiment."""
+    """A single news headline with optional sentiment scores."""
 
     symbol: str
     date: str  # ISO "YYYY-MM-DD"
@@ -28,10 +28,19 @@ class NewsItem:
     sentiment_label: Optional[str] = None
     confidence: Optional[float] = None
     finbert_score: Optional[float] = None  # -1..+1 (positive - negative)
+    llm_label: Optional[str] = None
+    llm_positive: Optional[float] = None
+    llm_negative: Optional[float] = None
+    llm_neutral: Optional[float] = None
+    llm_score: Optional[float] = None  # -1..+1 (positive - negative)
 
     @property
     def has_sentiment(self) -> bool:
         return self.finbert_score is not None
+
+    @property
+    def has_llm_score(self) -> bool:
+        return self.llm_score is not None
 
     @classmethod
     def from_dict(cls, d: dict) -> "NewsItem":
@@ -45,6 +54,11 @@ class NewsItem:
             sentiment_label=d.get("sentiment_label"),
             confidence=d.get("confidence"),
             finbert_score=d.get("finbert_score"),
+            llm_label=d.get("llm_label"),
+            llm_positive=d.get("llm_positive"),
+            llm_negative=d.get("llm_negative"),
+            llm_neutral=d.get("llm_neutral"),
+            llm_score=d.get("llm_score"),
         )
 
 
