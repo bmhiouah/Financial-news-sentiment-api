@@ -1,14 +1,12 @@
 """Backtester: orchestrates the tick loop over market data.
 
-The output of `Backtester.run()` is the original price DataFrame loaded by
-`DataLoader`, enriched with three new columns: `capital`, `open_long`,
-`open_short`. On the final trading day all open trades are liquidated
-back into capital so the final `capital` value represents the complete
-portfolio value.
+The output of `Backtester.run()` is the price DataFrame loaded by `DataLoader`,
+enriched with `capital`, `virtual_capital`, `open_long` and `open_short`. On the
+final trading day all open trades are liquidated back into capital, so the final
+`capital` value is the complete portfolio value.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import List, Optional
 
 import pandas as pd
@@ -44,17 +42,17 @@ class Backtester:
 
     # ---- preflight ----
 
-    def count_signals(self, equity: str, df: Optional[pd.DataFrame] = None) -> int:
-        """Count how many buy/sell signals the strategy would produce for `equity`."""
-        df = df if df is not None else self.loader.load(equity)
+    def count_signals(self, symbol: str, df: Optional[pd.DataFrame] = None) -> int:
+        """Count how many buy/sell signals the strategy would produce for `symbol`."""
+        df = df if df is not None else self.loader.load(symbol)
         return int(self.strategy.signal_series(df["sentiment_score"]).notna().sum())
 
-    def validate(self, equity: str, df: Optional[pd.DataFrame] = None) -> int:
+    def validate(self, symbol: str, df: Optional[pd.DataFrame] = None) -> int:
         """Raise `InsufficientSignalsError` if the data produces < min_signals signals."""
-        n = self.count_signals(equity, df=df)
+        n = self.count_signals(symbol, df=df)
         if n < self.min_signals:
             raise InsufficientSignalsError(
-                f"Strategy on {equity!r} produces only {n} signal(s); "
+                f"Strategy on {symbol!r} produces only {n} signal(s); "
                 f"need at least {self.min_signals}. "
                 "Try lowering buy_threshold / sell_threshold magnitude or use a different equity."
             )
@@ -62,7 +60,7 @@ class Backtester:
 
     # ---- main loop ----
 
-    def run(self, equity: str, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    def run(self, symbol: str, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Run the strategy and return the enriched price DataFrame.
 
         `df` can be supplied to run several strategies on one identical copy of
@@ -77,8 +75,8 @@ class Backtester:
         - All open trades are closed on the final tick so the last
           `capital` value equals the final `virtual_capital`.
         """
-        df = df if df is not None else self.loader.load(equity)
-        self.validate(equity, df=df)
+        df = df if df is not None else self.loader.load(symbol)
+        self.validate(symbol, df=df)
 
         capital: List[float] = []
         virtual: List[float] = []

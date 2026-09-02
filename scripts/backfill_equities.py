@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Populate the `equities` reference table with all tickers available via OpenBB.
+"""Populate the `equities` reference table with the tickers OpenBB exposes.
 
-This script discovers tradable securities from multiple exchanges and stores
-them in the database's `equities` table.  It is idempotent: re-running only
-inserts symbols that are not already present.
+Idempotent: re-running only inserts symbols that are not already stored.
 
 Usage:
     python scripts/backfill_equities.py                  # all major US exchanges
@@ -20,29 +18,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from openbb import obb
+from openbb import obb  # noqa: E402
 
-from financial_sentiment.repository import Repository
-from financial_sentiment.domain import Equity
+from financial_sentiment.domain import Equity  # noqa: E402
+from financial_sentiment.repository import Repository  # noqa: E402
 
-
-EXCHANGES = ["XNAS", "XNYS", "XASE"]  # NASDAQ, NYSE, NYSE American (Arca)
-
-
-def _normalize_equity(symbol: str, raw: dict) -> Equity:
-    """Normalize an OpenBB search result row into an Equity."""
-    return Equity(
-        symbol=symbol.upper(),
-        name=raw.get("name") or raw.get("company_name") or "",
-        exchange=raw.get("exchange") or raw.get("exchange_name") or "",
-        sector=raw.get("sector") or "",
-        industry=raw.get("industry") or "",
-        market_cap=raw.get("market_cap"),
-    )
+EXCHANGES = ["XNAS", "XNYS", "XASE"]  # NASDAQ, NYSE, NYSE American
 
 
 def fetch_exchange_tickers(exchange: str, limit: int | None, delay: float) -> list[Equity]:
-    """Fetch tickers for a single exchange via OpenBB equity search."""
+    """Fetch the tickers listed on one exchange (MIC code) via OpenBB."""
     try:
         result = obb.equity.search(query="", exchange=exchange)
     except Exception as e:
@@ -53,22 +38,23 @@ def fetch_exchange_tickers(exchange: str, limit: int | None, delay: float) -> li
     if df.empty:
         print(f"  {exchange}: no results")
         return []
-
     if limit is not None:
         df = df.head(limit)
 
     equities = []
     for _, row in df.iterrows():
         raw = row.to_dict()
-        symbol = raw.get("symbol") or str(row.name)
-        try:
-            equities.append(_normalize_equity(symbol, raw))
-        except Exception:
-            equities.append(Equity(symbol=str(symbol).upper()))
+        equities.append(Equity(
+            symbol=(raw.get("symbol") or str(row.name)).upper(),
+            name=raw.get("name") or raw.get("company_name") or "",
+            exchange=raw.get("exchange") or raw.get("exchange_name") or "",
+            sector=raw.get("sector") or "",
+            industry=raw.get("industry") or "",
+            market_cap=raw.get("market_cap"),
+        ))
 
     if delay:
         time.sleep(delay)
-
     return equities
 
 
@@ -88,12 +74,11 @@ def main() -> None:
     repo.init()
 
     if args.clear:
-        with repo._conn() as conn:
-            conn.execute("DELETE FROM equities")
+        repo.clear_equities()
         print("Cleared equities table.")
 
-    total_before = repo.equity_count()
-    print(f"Starting equities table: {total_before} rows")
+    before = repo.equity_count()
+    print(f"Starting equities table: {before} rows")
 
     for exchange in args.exchanges:
         print(f"\nFetching exchange: {exchange}")
@@ -101,13 +86,11 @@ def main() -> None:
         if not items:
             continue
         written = repo.save_equities(items)
-        total_after = repo.equity_count()
         print(f"  {exchange}: {len(items)} fetched, {written} new, "
-              f"total in DB: {total_after}")
+              f"total in DB: {repo.equity_count()}")
 
-    total_final = repo.equity_count()
-    print(f"\nDone. {total_before} -> {total_final} equities "
-          f"({total_final - total_before} new).")
+    after = repo.equity_count()
+    print(f"\nDone. {before} -> {after} equities ({after - before} new).")
 
 
 if __name__ == "__main__":

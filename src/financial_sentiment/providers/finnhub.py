@@ -12,13 +12,14 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
-from typing import List, Optional, Set
+from typing import List, Optional, Sequence, Set
 
 import finnhub
 from openbb import obb
 
 from ..config import SETTINGS
 from ..domain import NewsItem, SOURCE_FINNHUB, news_key
+from ..repository import FINNHUB_TABLE
 from .base import NewsProvider
 
 
@@ -48,7 +49,10 @@ def _to_item(symbol: str, raw: dict, fallback_date: str) -> NewsItem:
 
 
 class FinnhubNewsProvider(NewsProvider):
+    """Writes to a staging table; rows join `news` once they are scored."""
+
     name = "finnhub"
+    table = FINNHUB_TABLE
 
     def __init__(self,
                  page_limit: Optional[int] = None,
@@ -83,11 +87,11 @@ class FinnhubNewsProvider(NewsProvider):
     # ---- public API ----
 
     def fetch(self, symbols: List[str], start: datetime, end: datetime,
-              sources: Optional[List[str]] = None) -> List[NewsItem]:
+              publishers: Optional[Sequence[str]] = None) -> List[NewsItem]:
         client = _get_client()
         start_str = start.strftime("%Y-%m-%d")
         allowed: Optional[Set[str]] = (
-            {s.upper() for s in sources} if sources else None
+            {p.upper() for p in publishers} if publishers else None
         )
 
         out: List[NewsItem] = []

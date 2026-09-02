@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single entry point for the financial sentiment pipeline.
+"""Entry point for the financial sentiment pipeline.
 
 Usage:
     python main.py --symbols AAPL MSFT --start-date 2026-07-01 --end-date 2026-08-28 --analyze
@@ -7,11 +7,9 @@ Usage:
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from financial_sentiment.cli import main
-
+from financial_sentiment.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

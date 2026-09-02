@@ -24,7 +24,7 @@ import pandas as pd
 
 from .backtester import Backtester, MIN_SIGNALS
 from .data import DataLoader
-from .metrics import METRIC_KEYS, compute_metrics
+from .metrics import compute_metrics
 from .portfolio import Portfolio
 from .strategy import BuyAndHoldStrategy, SentimentThresholdStrategy
 
@@ -82,7 +82,7 @@ class StrategyComparator:
 
     def compare(
         self,
-        equity: str,
+        symbol: str,
         initial_capital: float = 100.0,
         trade_size: float = 20.0,
         stop_loss: float = -0.05,
@@ -90,24 +90,24 @@ class StrategyComparator:
         buy_threshold: float = 0.2,
         sell_threshold: float = -0.2,
     ) -> ComparisonResult:
-        """Run both strategies on `equity` and return their metrics + curves.
+        """Run both strategies on `symbol` and return their metrics + curves.
 
         Raises `InsufficientSignalsError` when the sentiment strategy would
         produce fewer than `MIN_SIGNALS` trades (unchanged from `Backtester`).
         """
         # Loaded once and handed to both backtests -> identical data, always.
-        df = self.loader.load(equity)
+        df = self.loader.load(symbol)
         dates = [_as_date_str(d) for d in df["date"]]
         days = _calendar_days(dates)
 
         simple_df, simple_portfolio = self._run_simple(
-            df, equity, initial_capital, trade_size,
+            df, symbol, initial_capital, trade_size,
             stop_loss, stop_win, buy_threshold, sell_threshold,
         )
-        benchmark_df, benchmark_portfolio = self._run_benchmark(df, equity, initial_capital)
+        benchmark_df, benchmark_portfolio = self._run_benchmark(df, symbol, initial_capital)
 
         return ComparisonResult(
-            symbol=equity,
+            symbol=symbol,
             start=dates[0] if dates else "",
             end=dates[-1] if dates else "",
             n_days=len(dates),
@@ -121,7 +121,7 @@ class StrategyComparator:
 
     # ---- internals ----
 
-    def _run_simple(self, df: pd.DataFrame, equity: str, initial_capital: float,
+    def _run_simple(self, df: pd.DataFrame, symbol: str, initial_capital: float,
                     trade_size: float, stop_loss: float, stop_win: float,
                     buy_threshold: float, sell_threshold: float):
         portfolio = Portfolio(
@@ -135,10 +135,10 @@ class StrategyComparator:
             sell_threshold=sell_threshold,
         )
         result = Backtester(portfolio, strategy, loader=self.loader,
-                            min_signals=MIN_SIGNALS).run(equity, df=df)
+                            min_signals=MIN_SIGNALS).run(symbol, df=df)
         return result, portfolio
 
-    def _run_benchmark(self, df: pd.DataFrame, equity: str, initial_capital: float):
+    def _run_benchmark(self, df: pd.DataFrame, symbol: str, initial_capital: float):
         # One long position funded with the whole capital, stops disabled so the
         # position is never exited early, and min_signals=1 because buy & hold
         # produces exactly one entry by construction.
@@ -149,7 +149,7 @@ class StrategyComparator:
             stop_win=float("inf"),
         )
         result = Backtester(portfolio, BuyAndHoldStrategy(), loader=self.loader,
-                            min_signals=1).run(equity, df=df)
+                            min_signals=1).run(symbol, df=df)
         return result, portfolio
 
 
@@ -195,11 +195,3 @@ def _to_run(key: str, name: str, description: str, df: pd.DataFrame,
         dates=[_as_date_str(d) for d in df["date"]],
         curve=curve,
     )
-
-
-__all__ = [
-    "SIMPLE_KEY", "BENCHMARK_KEY",
-    "SIMPLE_NAME", "BENCHMARK_NAME",
-    "StrategyRun", "ComparisonResult", "StrategyComparator",
-    "METRIC_KEYS",
-]

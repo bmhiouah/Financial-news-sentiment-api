@@ -78,8 +78,3 @@ class Portfolio:
         return self.capital + sum(
             t.size * (1.0 + t.cumulative_return) for t in self.open_trades
         )
-
-    @property
-    def final_equity(self) -> float:
-        """Alias for `virtual_capital`; kept for backward compatibility."""
-        return self.virtual_capital

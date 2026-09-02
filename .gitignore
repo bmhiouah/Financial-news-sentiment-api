@@ -45,11 +45,6 @@ coverage.xml
 *.log
 manual_FUNC_test.log
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -103,6 +98,13 @@ venv.bak/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Tool caches
+.codebuddy/
+.kilo/
+.workbuddy-ai/
+.ruff_cache/
+.pytest_cache/
 
 # IDE
 .idea/

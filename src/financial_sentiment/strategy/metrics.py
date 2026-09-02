@@ -27,10 +27,6 @@ METRIC_LABELS: Dict[str, str] = {
     "sharpe_ratio": "Sharpe Ratio",
 }
 
-# True when a *higher* value means a better strategy.  Max drawdown is stored
-# as a negative number, so "higher" (i.e. closer to zero) is also better there.
-METRIC_HIGHER_IS_BETTER: Dict[str, bool] = {key: True for key in METRIC_KEYS}
-
 
 def daily_returns(values: Sequence[float]) -> List[float]:
     """Simple period-over-period returns; skips any zero/None base value."""

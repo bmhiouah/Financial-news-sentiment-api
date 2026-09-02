@@ -16,15 +16,9 @@ from typing import Optional
 
 import requests
 
+from ..config import SETTINGS
 from ..domain import NEGATIVE, NEUTRAL, POSITIVE, SentimentResult
 from .base import SentimentScorer
-
-try:
-    from ..env_loader import load_project_env
-    load_project_env()
-except Exception:
-    pass
-
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_DEFAULT_MODEL = "openai/gpt-oss-20b"
@@ -70,14 +64,7 @@ class GroqSentimentScorer(SentimentScorer):
         timeout: int = 20,
         pos_threshold: Optional[float] = None,
         neg_threshold: Optional[float] = None,
-        load_env: bool = True,
     ) -> None:
-        if load_env and not os.environ.get("GROQ_API_KEY"):
-            try:
-                from ..env_loader import load_project_env
-                load_project_env()
-            except Exception:
-                pass
         self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         if not self.api_key:
             raise RuntimeError(
@@ -88,8 +75,6 @@ class GroqSentimentScorer(SentimentScorer):
         self.endpoint = endpoint
         self.retries = retries
         self.timeout = timeout
-        # Local imports to avoid a circular dep at module load time
-        from ..config import SETTINGS
         self.pos_threshold = (
             pos_threshold if pos_threshold is not None else SETTINGS.positive_threshold
         )

@@ -1,320 +1,248 @@
 # Financial Sentiment Pipeline
 
-Fetch financial news and historical prices, run FinBERT sentiment analysis, and visualize the results.
+Fetch financial news and prices from OpenBB (and Finnhub), score headlines with
+FinBERT, store everything in PostgreSQL, and explore the results through a web UI
+and a REST API.
 
-## Quick Start
+```
+OpenBB / Finnhub  ->  news  ->  FinBERT sentiment  ->  PostgreSQL  ->  API + UI
+```
+
+## Quick start
 
 ```bash
 pip install -r requirements.txt
 
-# Single entry point: fetch data + sentiment for the requested range
-python main.py --symbols AAPL MSFT --start-date 2024-01-01 --end-date 2024-01-31 --analyze
+# 1. point the app at a database (see "Database" below)
+echo "DATABASE_URL=postgresql://postgres:@/financial_sentiment?host=$HOME/.financial_sentiment/pgdata" > .env
 
-# Re-running the same range skips API calls for already-covered data
-python main.py --symbols AAPL MSFT --start-date 2024-01-01 --end-date 2024-01-31 --analyze
+# 2. start the bundled local PostgreSQL (skip if you already run one)
+python scripts/pg_server.py start
 
-# Backfill returns
-python scripts/backfill_returns.py
+# 3. fetch news + prices and score the headlines
+python main.py --symbols AAPL MSFT --start-date 2026-07-01 --end-date 2026-08-28 --analyze
 
-# Discover and store all available tickers in the equities table
-python scripts/backfill_equities.py
-
-# Text-based sentiment vs returns analysis
+# 4. explore
+python scripts/run_api.py          # http://127.0.0.1:8000
 python -m financial_sentiment.analysis
 ```
 
-## FastAPI App
+## Database
+
+PostgreSQL is the only backend. The app needs nothing but a connection string,
+so it works against a local instance, Docker or a managed service.
 
 ```bash
-python scripts/run_api.py            # serves on http://127.0.0.1:8000
+python scripts/pg_server.py start     # prints the DATABASE_URL to put in .env
+python scripts/pg_server.py status
+python scripts/pg_server.py stop
+python scripts/pg_server.py psql "SELECT count(*) FROM news;"
+```
+
+The schema is created on startup (`Repository.init()` is idempotent) and every
+write is an upsert, so restarts and re-runs never clobber data.
+
+## CLI
+
+```bash
+python main.py --symbols AAPL GOOGL --start-date 2026-07-01 --end-date 2026-08-28 --analyze
+python main.py --symbols AAPL --start-date 2026-07-01 --end-date 2026-08-28 --analyze --source openbb
+python main.py --symbols AAPL --start-date 2026-07-01 --end-date 2026-08-28 --analyze \
+    --source finnhub --finnhub-sources CNBC Reuters
+```
+
+| Flag | Meaning |
+|---|---|
+| `--symbols` | tickers to fetch |
+| `--start-date` / `--end-date` | `YYYY-MM-DD` window |
+| `--analyze` | run FinBERT on the fetched headlines |
+| `--source` | `openbb`, `finnhub` or `both` (default) |
+| `--finnhub-sources` | restrict Finnhub to these publishers (default: all) |
+| `--force-refresh` | re-fetch prices even when the window is already covered |
+
+### Coverage guards
+
+Before every API call the pipeline checks what is already stored:
+
+- **prices** are skipped when the stored range covers the requested window
+  (`--force-refresh` overrides this).
+- **news** is always re-fetched (no provider guarantees it returned everything)
+  but de-duplicated by URL *before* scoring, so a repeat run costs API calls and
+  no FinBERT work.
+
+Finnhub also paginates backwards automatically: its free tier caps a response at
+~250 items, so the provider walks the end date backwards until a short page
+shows the window is drained.
+
+## Web UI and API
+
+```bash
+python scripts/run_api.py            # http://127.0.0.1:8000
 python scripts/run_api.py --port 9000
 python scripts/run_api.py --reload   # dev mode
 ```
 
-Then open `http://127.0.0.1:8000/` for the web UI, or `http://127.0.0.1:8000/docs`
-for the interactive OpenAPI documentation.
-
-**Current endpoints:**
+Open `http://127.0.0.1:8000/` for the UI and `http://127.0.0.1:8000/docs` for the
+interactive OpenAPI docs.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET`  | `/equities/symbols?q=apple&limit=500` | List/search the 10K+ ticker universe |
-| `GET`  | `/equities/count` | Total tickers in DB |
-| `GET`  | `/pipeline/status` | Current DB coverage (news/prices/sentiment rows) |
-| `POST` | `/pipeline/run` | Run the fetch + sentiment pipeline for selected symbols + date range |
-| `POST` | `/backtest/compare` | Run the Simple and Benchmark strategies on one equity and compare 4 metrics |
+| `GET` | `/equities/symbols?q=apple&limit=500&offset=0` | Search the ticker universe |
+| `GET` | `/equities/count` | Total tickers stored |
+| `GET` | `/pipeline/status` | Coverage (news / price / scored rows) |
+| `POST` | `/pipeline/run` | Fetch + score for symbols and a date range |
+| `GET` | `/analysis/available-symbols` | Symbols with both prices and scored news |
+| `GET` | `/analysis/date-range` | Min/max date available |
+| `GET` | `/analysis/correlation` | Sentiment vs returns correlation per symbol |
+| `GET` | `/analysis/price-sentiment` | Price line + daily sentiment markers |
+| `GET` | `/analysis/finbert-vs-llm` | FinBERT vs LLM scores on the same headlines |
+| `GET` | `/analysis/distribution` | Sentiment x log-return heatmap + correlation bars |
+| `GET` | `/analysis/news` | Stored articles for one symbol |
+| `POST` | `/backtest/run` | Backtest the sentiment strategy |
+| `POST` | `/backtest/compare` | Sentiment strategy vs buy & hold |
+| `POST` | `/backtest/optimize` | Grid-search the strategy parameters |
 
-The `POST /pipeline/run` body:
-```json
+```jsonc
+// POST /pipeline/run
 {
   "symbols": ["AAPL", "MSFT"],
   "start_date": "2026-07-01",
   "end_date": "2026-08-28",
   "sources": ["openbb", "finnhub"],
-  "finnhub_sources": ["CNBC"],
+  "finnhub_sources": null,   // null = keep every publisher
   "analyze": true,
   "force_refresh": false
 }
 ```
 
-## Usage
-
-```bash
-# Fetch from both OpenBB and Finnhub, default CNBC filter, run FinBERT
-python main.py --symbols AAPL GOOGL MSFT --start-date 2026-07-01 --end-date 2026-08-28 --analyze
-
-# Finnhub only, with custom source filter
-python main.py --symbols AAPL MSFT --start-date 2026-07-01 --end-date 2026-08-28 --analyze \
-    --source finnhub --finnhub-sources CNBC Reuters
-
-# OpenBB only
-python main.py --symbols AAPL --start-date 2026-07-01 --end-date 2026-08-28 --analyze --source openbb
-```
-
-- `--symbols` - stock symbols
-- `--start-date` / `--end-date` - date range
-- `--analyze` - run FinBERT sentiment on headlines
-- `--source` - `openbb`, `finnhub`, or `both` (default)
-- `--finnhub-sources` - list of sources to keep (default: `CNBC`). When Finnhub's free-tier
-  news depth limit is reached, the provider paginates backward automatically
-  (oldest fetched date -> next page end-date).
-- `--force-refresh` - re-fetch from APIs even when the requested range is already
-  covered in the database (default: skip covered symbols to avoid API cost).
-
-## Coverage Guards (avoid unnecessary API calls)
-
-The pipeline checks `data/news.db` before every API call:
-
-- **prices** (one row per trading day): skipped when MIN(date) <= start and MAX(date) >= end.
-- **news** / **finnhub_news** (sparse): skipped when at least one row exists for
-  the symbol within `[start, end]`.
-
-Use `--force-refresh` to override and re-fetch anyway. A unique index on
-`prices(symbol, date)` and `news(symbol, url)` de-duplicates overlapping
-fetches.
-
-## Smart Deduplication
-
-Before fetching, the pipeline checks `data/news.db`. If the requested date range for a symbol is already present, the API call is skipped. To force a fresh fetch, delete `data/news.db`.
-
-## Notebook
-
-Open `notebooks/demo.ipynb` to inspect the database and visualize price lines with sentiment markers.
-
-## Project Structure
+## Project structure
 
 ```
-├── data/
-│   └── news.db
-├── notebooks/
-│   └── demo.ipynb
-│   ├── scripts/
-│   │   ├── run_pipeline.py        # thin shim -> financial_sentiment.cli
-│   │   ├── backfill_equities.py   # discover + store all available tickers
-│   │   └── backfill_returns.py
-│   ├── src/
-│   │   └── financial_sentiment/
-│   │       ├── __init__.py        # public API
-│   │       ├── config.py          # Settings dataclass
-│   │       ├── domain.py          # NewsItem, PriceBar, SentimentResult, Coverage, Equity
-│   │       ├── repository.py      # SQLite-backed Repository
-│   │       ├── pipeline.py        # Pipeline orchestrator
-│   │       ├── cli.py             # argparse -> Pipeline
-│   │       ├── analysis.py        # CorrelationAnalyzer
-│   │       ├── env_loader.py      # tiny .env loader (no external dependency)
-│   │       ├── providers/
-│   │       │   ├── base.py        # NewsProvider, PriceProvider ABCs
-│   │       │   ├── openbb.py      # OpenBB implementations
-│   │       │   └── finnhub.py     # Finnhub implementation (with backward pagination)
-│   │       ├── sentiment/
-│   │       │   ├── base.py        # SentimentScorer ABC
-│   │       │   ├── finbert.py     # FinBERTScorer
-│   │       │   ├── groq.py        # GroqSentimentScorer (OpenAI-compatible API)
-│   │       │   └── vllm.py        # VLLMScorer
-│   │       └── strategy/          # trading strategies & backtesting
-│   │           ├── __init__.py
-│   │           ├── data.py        # DataLoader, MarketDataPoint
-│   │           ├── portfolio.py   # Portfolio
-│   │           ├── trade.py       # Trade, Side
-│   │           ├── strategy.py    # SentimentThresholdStrategy, BuyAndHoldStrategy
-│   │           ├── backtester.py  # Backtester
-│   │           ├── metrics.py     # total return / CAGR / max drawdown / Sharpe
-│   │           ├── comparison.py  # StrategyComparator (Simple vs Benchmark)
-│   │           └── optimizer.py   # StrategyOptimizer
-├── main.py                    # single entry point
-├── requirements.txt
-└── README.md
+src/financial_sentiment/
+├── config.py            # Settings + .env loading
+├── domain.py            # NewsItem, PriceBar, SentimentResult, Coverage, Equity
+├── repository.py        # PostgreSQL schema and queries (the only SQL in the project)
+├── pipeline.py          # orchestration: fetch -> score -> persist
+├── cli.py               # argparse -> Pipeline
+├── analysis.py          # sentiment/return correlation
+├── providers/           # data ingestion
+│   ├── base.py          # NewsProvider / PriceProvider contracts
+│   ├── openbb.py        # OpenBB news + prices (provider fallback list)
+│   └── finnhub.py       # Finnhub news (staging table, backward pagination)
+├── sentiment/
+│   ├── base.py          # SentimentScorer contract
+│   ├── finbert.py       # FinBERT (ProsusAI/finbert)
+│   └── groq.py          # optional LLM scorer, writes the llm_* columns
+├── strategy/            # sentiment-driven backtester
+│   ├── data.py          # loads the (price, sentiment) series for one symbol
+│   ├── trade.py         # Trade, Side
+│   ├── portfolio.py     # capital, stop-loss / stop-win
+│   ├── strategy.py      # threshold + buy-and-hold strategies
+│   ├── backtester.py    # the tick loop
+│   ├── metrics.py       # total return, CAGR, max drawdown, Sharpe
+│   ├── comparison.py    # sentiment strategy vs benchmark
+│   └── optimizer.py     # coarse-then-refine parameter search
+└── api/                 # FastAPI app
+    ├── main.py, deps.py, schemas.py
+    ├── routes/          # equities, pipeline, analysis, backtest
+    └── static/          # web UI
+
+scripts/
+├── pg_server.py         # start/stop the bundled local PostgreSQL
+├── run_api.py           # start the API
+├── backfill_equities.py # populate the ticker universe
+└── score_llm.py         # backfill Groq LLM sentiment
+
+main.py                  # CLI entry point
 ```
 
-## Programmatic API
+## Programmatic use
 
 ```python
 from datetime import datetime
 from financial_sentiment import Pipeline
 
 results = Pipeline.default().run(
-    symbols=["AAPL", "MSFT", "GOOGL"],
+    symbols=["AAPL", "MSFT"],
     start=datetime(2026, 7, 1),
     end=datetime(2026, 8, 28),
     sources=("openbb", "finnhub"),
-    finnhub_sources=["CNBC"],
-    analyze=True,        # run FinBERT on fetched headlines
-    force_refresh=False, # set True to bypass the coverage check
+    finnhub_sources=None,   # None = every publisher, or ["CNBC"]
+    analyze=True,
+    force_refresh=False,
 )
 ```
 
-## Trading Strategy & Backtester
+Backtesting is a separate import so the package root stays light:
 
 ```python
-from financial_sentiment import (
-    Backtester, Portfolio, SentimentThresholdStrategy,
+from financial_sentiment.strategy import (
+    Backtester, Portfolio, SentimentThresholdStrategy, StrategyComparator,
 )
 
-portfolio = Portfolio(
-    initial_capital=100, trade_size=20,
-    stop_loss=-0.05, stop_win=0.10,
-)
-strategy = SentimentThresholdStrategy(
-    buy_threshold=0.2, sell_threshold=-0.2,
-)
-df = Backtester(portfolio, strategy).run(equity="AAPL")
-# `df` is the original price DataFrame enriched with:
-#   capital, virtual_capital, open_long, open_short
+portfolio = Portfolio(initial_capital=100, trade_size=20,
+                      stop_loss=-0.05, stop_win=0.10)
+strategy = SentimentThresholdStrategy(buy_threshold=0.2, sell_threshold=-0.2)
+df = Backtester(portfolio, strategy).run(symbol="AAPL")
+# df = date, open, high, low, close, volume, sentiment_score
+#      + capital, virtual_capital, open_long, open_short
 ```
 
-- `capital` is the available cash (open trades are funded from it).
-- `virtual_capital` = `capital` + the liquidation value of every open trade
-  at the current price.
-- On the final trading day all open trades are liquidated, so the last
-  `capital` equals the last `virtual_capital`.
-- A strategy must produce **>= 5 buy/sell signals** on the loaded data;
-  otherwise `run()` raises `InsufficientSignalsError` before any trades
-  are placed.
+- `capital` is available cash; `virtual_capital` adds the liquidation value of
+  open positions. All positions are closed on the final bar, so the two agree.
+- A strategy must produce **>= 5 signals**; otherwise `run()` raises
+  `InsufficientSignalsError` before trading.
+- `StrategyComparator` loads the series once and passes the same DataFrame to
+  both the sentiment strategy and a buy & hold benchmark, so the comparison
+  cannot diverge on data or assumptions.
+- `StrategyOptimizer` grid-searches `(stop_loss, stop_win, buy_threshold,
+  sell_threshold)` on total P&L, refining around the best candidates.
 
-OOP layout (`src/financial_sentiment/strategy/`):
+## LLM (Groq) sentiment backfill
 
-- `Trade`, `Side` — position model; return is signed so positive always means profit.
-- `Portfolio` — capital, `open_trade`, `close_stops` (fires on `stop_loss` / `stop_win`), replenishes capital with `size * (1 + return)` on close. Exposes `virtual_capital` (cash + liquidation value of open trades).
-- `SentimentThresholdStrategy` — `signal(score) -> Side | None`, plus a vectorized `signal_series(...)`.
-- `DataLoader` — returns a price DataFrame (date, open, high, low, close, volume, sentiment_score) joined from `prices` and `news` by `(symbol, date)`.
-- `Backtester` — tick loop: mark-to-market, close stops, open new trade on signal. On the **final tick** it liquidates all remaining open trades so the last `capital` cell equals the last `virtual_capital`. Returns the enriched price DataFrame.
-
-The `notebooks/demo.ipynb` notebook contains a worked example: it picks a
-random existing equity, runs the strategy, displays the enriched DataFrame,
-and plots `virtual_capital` over time with a secondary panel showing the
-number of open long/short trades per tick.
-
-## Strategy Comparison (Simple vs Benchmark)
-
-The **Analyse** tab compares the existing sentiment strategy against a
-**Buy & Hold** benchmark on a single equity. `StrategyComparator` loads the
-price/sentiment series **once** and hands the same DataFrame to both
-backtests, so the two runs always share the data, the window, the starting
-capital, the close prices and the end-of-backtest liquidation.
-
-| | Simple Strategy | Benchmark |
-|---|---|---|
-| Class | `SentimentThresholdStrategy` | `BuyAndHoldStrategy` |
-| Logic | long/short of `trade_size` when sentiment crosses a threshold | one long funded with 100% of the capital, on the first bar |
-| Exits | `stop_loss` / `stop_win` | none, liquidated on the last bar |
-
-Four metrics are computed by `strategy/metrics.py` from each daily equity
-curve (`virtual_capital`): **Total Return**, **CAGR**, **Max Drawdown**
-(negative) and **Sharpe Ratio** (annualised, risk-free rate 0).
-
-```python
-from financial_sentiment import StrategyComparator
-
-result = StrategyComparator().compare(
-    "AAPL",
-    initial_capital=100, trade_size=20,
-    stop_loss=-0.05, stop_win=0.10,
-    buy_threshold=0.2, sell_threshold=-0.2,
-)
-for run in result.runs:
-    print(run.name, run.final_capital, run.metrics)
-```
+`GroqSentimentScorer` produces a FinBERT-shaped result (positive / negative /
+neutral probabilities, a label and a compound score in [-1, +1]) and stores it in
+the `llm_*` columns. FinBERT stays the primary scorer; this is a comparison path.
 
 ```bash
-curl -X POST http://127.0.0.1:8000/backtest/compare \
-  -H "Content-Type: application/json" \
-  -d '{"symbol": "AAPL", "params": {"initial_capital": 100, "trade_size": 20}}'
+export GROQ_API_KEY="gsk_..."      # or add it to .env
+python scripts/score_llm.py                  # score every row with llm_score IS NULL
+python scripts/score_llm.py --limit 500
+python scripts/score_llm.py --delay 0.1      # rate-limit guard
+python scripts/score_llm.py --batch-size 25  # DB write granularity (default 50)
 ```
 
-Note: the benchmark is fully invested, while the Simple Strategy only
-deploys `trade_size` when a signal fires and holds cash otherwise — that
-difference in exposure is exactly what the drawdown and Sharpe columns show.
+The script is idempotent and resumable: only rows with `llm_score IS NULL` are
+scored, and results are flushed every `--batch-size` rows.
 
-## Strategy Parameter Optimisation
+## Configuration
 
-`StrategyOptimizer` searches the `(stop_loss, stop_win, buy_threshold,
-sell_threshold)` space with a coarse grid followed by a refinement pass
-around the top-K coarse candidates. The objective is total P&L
-(`final_capital - initial_capital`) on the requested training window.
+Every setting is read from the environment, then `<project_root>/.env`, then the
+defaults in `config.py` (see `.env.example`):
 
-```python
-from datetime import datetime
-from financial_sentiment import StrategyOptimizer
+| Variable | Default |
+|---|---|
+| `DATABASE_URL` | `postgresql:///financial_sentiment` |
+| `FINANCIAL_SENTIMENT_FINBERT_MODEL` | `ProsusAI/finbert` |
+| `FINANCIAL_SENTIMENT_POS_THRESHOLD` / `_NEG_THRESHOLD` | `0.2` / `-0.2` |
+| `FINANCIAL_SENTIMENT_PRICE_PROVIDERS` | `fmp,yfinance,tiingo` |
+| `FINANCIAL_SENTIMENT_NEWS_PROVIDERS` | `,yfinance` |
+| `FINANCIAL_SENTIMENT_FINNHUB_PAGE_LIMIT` / `_MAX_PAGES` | `200` / `40` |
 
-result = StrategyOptimizer().optimize(
-    equity="AAPL",
-    start=datetime(2026, 7, 29),
-    end=datetime(2026, 8, 28),
-)
-print(result.best.params, result.best.pnl)
-```
+The OpenBB provider lists are ordered fallbacks: the first provider that returns
+rows wins, so a ticker missing from a paid tier is rescued by a free one. An
+empty entry means "let OpenBB pick its own priority".
 
-Exposed at the package root: `StrategyOptimizer`, `OptimizationResult`,
-`TrialResult`, `DEFAULT_COARSE_GRID`.
+## Database schema
 
-## LLM (Groq) Sentiment Backfill
+| Table | Contents |
+|---|---|
+| `news` | the articles that everything else reads |
+| `finnhub_news` | staging table; rows join `news` once scored |
+| `prices` | daily OHLCV + daily/weekly/monthly returns |
+| `equities` | ticker universe used for symbol lookup |
 
-`GroqSentimentScorer` produces a FinBERT-style sentiment for each
-headline (positive / negative / neutral probabilities, label, and a
-compound score in [-1, +1]). The DB stores these in dedicated
-`llm_*` columns on `news` and `finnhub_news`.
-
-Set the API key once via either:
-  * environment variable:    `export GROQ_API_KEY="gsk_..."` (https://console.groq.com/keys)
-  * a `.env` file at the project root:    `GROQ_API_KEY=gsk_...`
-
-The `.env` file is auto-loaded by both `GroqSentimentScorer` and the
-`scripts/score_llm.py` entry point (no `python-dotenv` dependency). A
-`.env.example` is included as a template. The `.env` file itself is
-git-ignored.
-
-Backfill rows that already have a FinBERT score but no LLM score yet:
-
-```bash
-python scripts/score_llm.py                  # score all pending rows
-python scripts/score_llm.py --limit 500     # cap the run
-python scripts/score_llm.py --delay 0.1     # rate-limit guard
-python scripts/score_llm.py --batch-size 25 # DB write granularity (default 50)
-```
-
-`scripts/score_llm.py` is fully idempotent: re-running only scores rows
-whose `llm_score` is still NULL. The `WHERE llm_score IS NULL` filter
-in `Repository.fetch_pending_llm` is the source of truth, so an
-interrupted run resumes cleanly from where it stopped. Successful
-rows are written in batches of `--batch-size` so a crash mid-run
-loses at most that many API calls' worth of work.
-
-The `notebooks/demo.ipynb` notebook includes a section that loads
-rows with both scores and produces a FinBERT vs LLM scatter plot,
-plus a per-symbol sign-agreement bar chart.
-
-## Database Schema
-
-**equities** — universe of available tickers (for FastAPI lookup)
-- `symbol` (PRIMARY KEY)
-- `name`, `exchange`, `sector`, `industry`, `market_cap`
-
-**news**
-- `symbol`, `date`, `headline`, `text`, `source`, `url`
-- `sentiment_label`, `confidence`
-- `finbert_score` (-1 to +1)
-- `llm_label`, `llm_positive`, `llm_negative`, `llm_neutral`, `llm_score`
-
-**prices**
-- `symbol`, `date`, `open`, `high`, `low`, `close`, `volume`
-- `daily_return`, `weekly_return`, `monthly_return`
+`news` and `finnhub_news` share one schema: `symbol`, `date`, `headline`, `text`,
+`source`, `url`, `sentiment_label`, `confidence`, `finbert_score`, and the five
+`llm_*` columns. Deduplication relies on unique indexes on `(symbol, url)` for
+news and `(symbol, date)` for prices.

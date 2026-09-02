@@ -1,14 +1,22 @@
+# OpenBB -> news -> FinBERT (and optionally a Groq LLM) -> PostgreSQL
 openbb==3.5.0
-pydantic-settings
-transformers
-torch
-sqlalchemy
-loguru
-matplotlib
-plotly
-ipympl
 finnhub-python
 requests
+
+# Sentiment
+transformers
+torch
+
+# Storage
+psycopg[binary]
+
+# API
 fastapi
 uvicorn
-python-dotenv
+
+# Analysis / backtesting
+numpy
+pandas
+
+# Local PostgreSQL for development (scripts/pg_server.py)
+pgserver

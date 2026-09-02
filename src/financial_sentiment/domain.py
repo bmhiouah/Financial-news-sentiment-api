@@ -1,23 +1,21 @@
-"""Domain models used across the pipeline."""
+"""Domain models shared by the pipeline, the repository and the API."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
-from typing import Optional, Tuple
+from typing import Optional
 
-# Sentiment labels
 POSITIVE = "positive"
 NEGATIVE = "negative"
 NEUTRAL = "neutral"
 
-# News source kinds
 SOURCE_OPENBB = "OpenBB"
 SOURCE_FINNHUB = "Finnhub"
 
 
 @dataclass
 class NewsItem:
-    """A single news headline with optional sentiment scores."""
+    """A single news article with its sentiment scores."""
 
     symbol: str
     date: str  # ISO "YYYY-MM-DD"
@@ -34,37 +32,10 @@ class NewsItem:
     llm_neutral: Optional[float] = None
     llm_score: Optional[float] = None  # -1..+1 (positive - negative)
 
-    @property
-    def has_sentiment(self) -> bool:
-        return self.finbert_score is not None
-
-    @property
-    def has_llm_score(self) -> bool:
-        return self.llm_score is not None
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "NewsItem":
-        return cls(
-            symbol=d.get("symbol", ""),
-            date=_coerce_date(d.get("date")),
-            headline=d.get("headline", "") or "",
-            text=d.get("text", "") or "",
-            source=d.get("source", SOURCE_OPENBB),
-            url=d.get("url", "") or "",
-            sentiment_label=d.get("sentiment_label"),
-            confidence=d.get("confidence"),
-            finbert_score=d.get("finbert_score"),
-            llm_label=d.get("llm_label"),
-            llm_positive=d.get("llm_positive"),
-            llm_negative=d.get("llm_negative"),
-            llm_neutral=d.get("llm_neutral"),
-            llm_score=d.get("llm_score"),
-        )
-
 
 @dataclass
 class PriceBar:
-    """One trading-day price bar with optional forward returns."""
+    """One trading-day price bar with forward returns."""
 
     symbol: str
     date: str
@@ -77,21 +48,6 @@ class PriceBar:
     weekly_return: Optional[float] = None
     monthly_return: Optional[float] = None
 
-    @classmethod
-    def from_dict(cls, d: dict) -> "PriceBar":
-        return cls(
-            symbol=d.get("symbol", ""),
-            date=_coerce_date(d.get("date")),
-            open=d.get("open"),
-            high=d.get("high"),
-            low=d.get("low"),
-            close=d.get("close"),
-            volume=d.get("volume"),
-            daily_return=d.get("daily_return"),
-            weekly_return=d.get("weekly_return"),
-            monthly_return=d.get("monthly_return"),
-        )
-
 
 @dataclass
 class SentimentResult:
@@ -100,9 +56,6 @@ class SentimentResult:
     score: float  # -1..+1
     label: str  # "positive" / "negative" / "neutral"
     confidence: float  # |score|
-
-    def to_row(self) -> Tuple[Optional[str], Optional[float], Optional[float]]:
-        return (self.label, self.confidence, self.score)
 
 
 @dataclass
@@ -119,14 +72,10 @@ class Coverage:
     def is_empty(self) -> bool:
         return self.n_rows == 0
 
-    @property
-    def is_full(self) -> bool:
-        return self.min_date is not None and self.max_date is not None
-
 
 @dataclass
 class Equity:
-    """A tradable security used as a reference / universe entry."""
+    """A tradable security, used as the reference universe."""
 
     symbol: str
     name: str = ""
@@ -135,30 +84,19 @@ class Equity:
     industry: str = ""
     market_cap: Optional[float] = None
 
-    @classmethod
-    def from_dict(cls, d: dict) -> "Equity":
-        return cls(
-            symbol=(d.get("symbol") or "").upper(),
-            name=d.get("name") or d.get("company_name") or "",
-            exchange=d.get("exchange") or d.get("exchange_name") or "",
-            sector=d.get("sector") or "",
-            industry=d.get("industry") or "",
-            market_cap=d.get("market_cap"),
-        )
 
-
-def news_key(item: "NewsItem") -> str:
+def news_key(item: NewsItem) -> str:
     """Stable identity for an article, used for de-duplication.
 
-    The URL is the natural key, but not every provider returns one, so fall
-    back to date + headline rather than dropping those articles.
+    The URL is the natural key, but not every provider returns one, so fall back
+    to date + headline rather than dropping those articles.
     """
     if item.url:
         return item.url
     return f"{item.date}|{item.headline.strip().lower()}"
 
 
-def _coerce_date(value) -> str:
+def coerce_date(value) -> str:
     """Accept date, datetime, pandas.Timestamp, or ISO string -> 'YYYY-MM-DD'."""
     if value is None:
         return ""
@@ -169,5 +107,4 @@ def _coerce_date(value) -> str:
             pass
     if isinstance(value, date):
         return value.strftime("%Y-%m-%d")
-    s = str(value)[:10]
-    return s
+    return str(value)[:10]

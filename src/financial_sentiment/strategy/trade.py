@@ -10,10 +10,6 @@ class Side(str, Enum):
     LONG = "long"
     SHORT = "short"
 
-    @property
-    def signed_unit(self) -> int:
-        return 1 if self is Side.LONG else -1
-
 
 @dataclass
 class Trade:
@@ -54,7 +50,3 @@ class Trade:
     @property
     def is_open(self) -> bool:
         return self.exit_date is None
-
-    @property
-    def pnl(self) -> float:
-        return self.size * self.cumulative_return

@@ -1,27 +1,24 @@
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "financial-sentiment"
 version = "0.1.0"
-description = "Financial news sentiment pipeline: fetch, score, analyze, backtest."
+description = "Financial news sentiment pipeline: OpenBB -> news -> FinBERT -> PostgreSQL."
 requires-python = ">=3.10"
 dependencies = [
     "openbb==3.5.0",
-    "pydantic-settings",
-    "transformers",
-    "torch",
-    "sqlalchemy",
-    "loguru",
-    "matplotlib",
-    "plotly",
-    "ipympl",
     "finnhub-python",
     "requests",
+    "transformers",
+    "torch",
+    "psycopg[binary]",
     "fastapi",
     "uvicorn",
-    "python-dotenv",
+    "numpy",
+    "pandas",
+    "pgserver",
 ]
 
 [project.optional-dependencies]
@@ -31,8 +28,14 @@ dev = [
     "ruff",
 ]
 
+[project.scripts]
+financial-sentiment = "financial_sentiment.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.package-data]
+financial_sentiment = ["api/static/*"]

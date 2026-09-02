@@ -7,13 +7,8 @@ from typing import Any, Dict, List, Optional, Sequence
 from openbb import obb
 
 from ..config import SETTINGS
-from ..domain import NewsItem, PriceBar, SOURCE_OPENBB
+from ..domain import NewsItem, PriceBar, SOURCE_OPENBB, coerce_date
 from .base import NewsProvider, PriceProvider
-
-
-# --------------------------------------------------------------------------- #
-# Helpers
-# --------------------------------------------------------------------------- #
 
 #: Entry meaning "let OpenBB apply its own provider priority order".
 DEFAULT_PROVIDER = ""
@@ -29,23 +24,35 @@ def _provider_label(name: str) -> str:
 
 
 def _get_attr(obj: Any, *keys: str, default=None):
-    """Read a value from a dict or attribute, trying each key in order."""
-    for k in keys:
+    """Read a value from a dict or an object, trying each key in order."""
+    for key in keys:
         if isinstance(obj, dict):
-            if k in obj and obj[k] is not None:
-                return obj[k]
-        else:
-            v = getattr(obj, k, None)
-            if v is not None:
-                return v
+            if obj.get(key) is not None:
+                return obj[key]
+        elif getattr(obj, key, None) is not None:
+            return getattr(obj, key)
     return default
 
 
-def _normalize_news_item(raw: Any, symbol: str) -> Optional[NewsItem]:
-    """Turn a raw OpenBB news result into a NewsItem, filtering by symbol.
+def _price_rows(results: Any) -> List[Any]:
+    """Normalise an OpenBB price result into a list of rows.
 
-    Items that carry no symbol list at all are kept: the query was already
-    scoped to `symbol`, so dropping them would throw away valid coverage.
+    Depending on the provider, `results` is a DataFrame, a list of dicts, or a
+    list of provider-specific model objects (e.g. `FMPEquityHistoricalData`).
+    `_get_attr` reads all three, so only the DataFrame needs converting.
+    """
+    if results is None:
+        return []
+    if hasattr(results, "to_dict"):
+        return results.to_dict(orient="records")
+    return list(results)
+
+
+def _to_news_item(raw: Any, symbol: str) -> Optional[NewsItem]:
+    """Turn a raw OpenBB news result into a NewsItem, filtered by symbol.
+
+    Items carrying no symbol list at all are kept: the query was already scoped
+    to `symbol`, so dropping them would throw away valid coverage.
     """
     raw_symbols = _get_attr(raw, "symbols", default=[])
     if isinstance(raw_symbols, str):
@@ -55,7 +62,7 @@ def _normalize_news_item(raw: Any, symbol: str) -> Optional[NewsItem]:
         return None
     return NewsItem(
         symbol=symbol,
-        date=_coerce_iso(_get_attr(raw, "date", "published")),
+        date=coerce_date(_get_attr(raw, "date", "published")),
         headline=_get_attr(raw, "title", "headline", default=""),
         text=_get_attr(raw, "text", "body", "content", default=""),
         source=_get_attr(raw, "source", "source_name", default=SOURCE_OPENBB),
@@ -63,75 +70,38 @@ def _normalize_news_item(raw: Any, symbol: str) -> Optional[NewsItem]:
     )
 
 
-def _coerce_iso(value) -> str:
-    if value is None:
-        return ""
-    if hasattr(value, "date") and callable(value.date):
-        try:
-            return value.date().strftime("%Y-%m-%d")
-        except Exception:
-            pass
-    return str(value)[:10]
-
-
-def _price_rows_to_dicts(results) -> List[Dict[str, Any]]:
-    if hasattr(results, "to_dict"):
-        return results.to_dict(orient="records")
-    out: List[Dict[str, Any]] = []
-    for r in results or []:
-        if isinstance(r, dict):
-            out.append(r)
-        else:
-            out.append({
-                "date": getattr(r, "date", None),
-                "open": getattr(r, "open", None),
-                "high": getattr(r, "high", None),
-                "low": getattr(r, "low", None),
-                "close": getattr(r, "close", None),
-                "volume": getattr(r, "volume", None),
-            })
-    return out
-
-
-def _compute_returns(bars: List[PriceBar]) -> List[PriceBar]:
-    """Fill daily/weekly/monthly forward returns from close prices."""
-    closes = [b.close for b in bars if b.close is not None]
-    for i, bar in enumerate(bars):
-        if bar.close is None:
-            continue
-        # Find the index of this bar within `closes`
-        try:
-            ci = closes.index(bar.close, sum(1 for b in bars[:i] if b.close is not None))
-        except ValueError:
-            continue
-        if ci > 0 and closes[ci - 1]:
-            bar.daily_return = (bar.close - closes[ci - 1]) / closes[ci - 1]
-        if ci >= 7 and closes[ci - 7]:
-            bar.weekly_return = (bar.close - closes[ci - 7]) / closes[ci - 7]
-        if ci >= 30 and closes[ci - 30]:
-            bar.monthly_return = (bar.close - closes[ci - 30]) / closes[ci - 30]
+def _add_returns(bars: List[PriceBar]) -> List[PriceBar]:
+    """Fill daily/weekly/monthly returns from the ordered close prices."""
+    # `bars` is chronologically sorted, so positional lookups are the lags.
+    priced = [b for b in bars if b.close]
+    closes = [b.close for b in priced]
+    for index, bar in enumerate(priced):
+        for field, lag in (("daily_return", 1), ("weekly_return", 7),
+                           ("monthly_return", 30)):
+            if index < lag:
+                continue
+            previous = closes[index - lag]
+            if previous:
+                setattr(bar, field, (bar.close - previous) / previous)
     return bars
 
 
-# --------------------------------------------------------------------------- #
-# Providers
-# --------------------------------------------------------------------------- #
-
 class OpenBBNewsProvider(NewsProvider):
+    """Tries each configured OpenBB news provider; the first with data wins."""
+
     name = "openbb"
 
     def __init__(self, providers: Optional[Sequence[str]] = None) -> None:
         self.providers = tuple(providers) if providers is not None else SETTINGS.news_providers
 
     def fetch(self, symbols: List[str], start: datetime, end: datetime,
-              sources: Optional[List[str]] = None) -> List[NewsItem]:
+              publishers: Optional[Sequence[str]] = None) -> List[NewsItem]:
         items: List[NewsItem] = []
         for symbol in symbols:
             items.extend(self._fetch_one(symbol, start, end))
         return items
 
     def _fetch_one(self, symbol: str, start: datetime, end: datetime) -> List[NewsItem]:
-        """Try each OpenBB news provider in turn; stop at the one that has data."""
         errors: List[str] = []
         for provider in self.providers:
             try:
@@ -145,11 +115,11 @@ class OpenBBNewsProvider(NewsProvider):
                 errors.append(f"{_provider_label(provider)}: {_short(e)}")
                 continue
 
-            found: List[NewsItem] = []
-            for raw in getattr(response, "results", None) or []:
-                item = _normalize_news_item(raw, symbol)
-                if item is not None:
-                    found.append(item)
+            found = [
+                item
+                for raw in getattr(response, "results", None) or []
+                if (item := _to_news_item(raw, symbol)) is not None
+            ]
             if found:
                 return found
             errors.append(f"{_provider_label(provider)}: no articles")
@@ -161,18 +131,19 @@ class OpenBBNewsProvider(NewsProvider):
 
 
 class OpenBBPriceProvider(PriceProvider):
+    """Tries each configured OpenBB price provider; the first with data wins.
+
+    Free FMP keys reject a lot of tickers with HTTP 402. Falling through to
+    yfinance (no key required) keeps those symbols usable instead of leaving
+    them with news but no prices, which hides them from the Analyse tab.
+    """
+
     name = "openbb"
 
     def __init__(self, providers: Optional[Sequence[str]] = None) -> None:
         self.providers = tuple(providers) if providers is not None else SETTINGS.price_providers
 
     def fetch(self, symbol: str, start: datetime, end: datetime) -> List[PriceBar]:
-        """Try each OpenBB price provider in turn; return the first that has data.
-
-        Free FMP keys reject a lot of tickers with HTTP 402. Falling through to
-        yfinance (no key required) keeps those symbols usable instead of leaving
-        them with news but no prices, which hides them from the Analyse tab.
-        """
         errors: List[str] = []
         for provider in self.providers:
             try:
@@ -201,20 +172,20 @@ class OpenBBPriceProvider(PriceProvider):
 
     @staticmethod
     def _to_bars(symbol: str, response: Any) -> List[PriceBar]:
-        rows = _price_rows_to_dicts(getattr(response, "results", None))
-        bars: List[PriceBar] = []
-        for row in rows:
-            bars.append(PriceBar(
+        bars = [
+            PriceBar(
                 symbol=symbol,
-                date=_coerce_iso(row.get("date")),
-                open=row.get("open"),
-                high=row.get("high"),
-                low=row.get("low"),
-                close=row.get("close"),
-                volume=row.get("volume"),
-            ))
+                date=coerce_date(_get_attr(row, "date")),
+                open=_get_attr(row, "open"),
+                high=_get_attr(row, "high"),
+                low=_get_attr(row, "low"),
+                close=_get_attr(row, "close"),
+                volume=_get_attr(row, "volume"),
+            )
+            for row in _price_rows(getattr(response, "results", None))
+        ]
         bars.sort(key=lambda b: b.date)
-        return _compute_returns(bars)
+        return _add_returns(bars)
 
 
 def _short(err: Exception, limit: int = 140) -> str:

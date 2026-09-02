@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Optional
 
 import pandas as pd
 
 from .trade import Side
-
-ArrayLike = Union[pd.Series, float, int]
 
 
 @dataclass
@@ -29,10 +27,8 @@ class SentimentThresholdStrategy:
             return Side.SHORT
         return None
 
-    def signal_series(self, scores: ArrayLike) -> pd.Series:
-        """Vectorized: returns a Series of 'long' / 'short' / NaN, aligned to `scores`."""
-        if not isinstance(scores, pd.Series):
-            scores = pd.Series(scores)
+    def signal_series(self, scores: pd.Series) -> pd.Series:
+        """Vectorized: a Series of 'long' / 'short' / None, aligned to `scores`."""
         out = pd.Series([None] * len(scores), index=scores.index, dtype=object)
         out[scores >= self.buy_threshold] = Side.LONG.value
         out[scores <= self.sell_threshold] = Side.SHORT.value
@@ -59,10 +55,8 @@ class BuyAndHoldStrategy:
         self._entered = True
         return Side.LONG
 
-    def signal_series(self, scores: ArrayLike) -> pd.Series:
-        """Vectorized: a single 'long' on the first row, NaN afterwards."""
-        if not isinstance(scores, pd.Series):
-            scores = pd.Series(scores)
+    def signal_series(self, scores: pd.Series) -> pd.Series:
+        """Vectorized: a single 'long' on the first row, None afterwards."""
         out = pd.Series([None] * len(scores), index=scores.index, dtype=object)
         if len(out):
             out.iloc[0] = Side.LONG.value
