@@ -40,6 +40,28 @@
   and `Price + News Sentiment` (markers on a price line, sized by |score|,
   coloured by sign), not stylised sparklines.
 
+## Verified state (2026-09-03)
+- DB: 11,474 news rows (100% FinBERT-scored), 757 daily price bars, 9 symbols
+  (AAPL ABNB AMZN GOOGL META MSFT NFLX NVDA TSLA), 10,391 tickers in the
+  reference universe. LLM scores: 0 (optional, needs `GROQ_API_KEY` +
+  `scripts/score_llm.py`).
+- Codebase has **no dead code**: ruff clean, no orphan modules, no unused
+  classes or public methods, zero SQLite references left.
+- `Project_overview_final.png` (lowercase "o") is the user's own deliverable —
+  keep it. README line 6 was fixed to match its exact case.
+
+## API smoke-test gotchas
+- `/analysis/price-sentiment` and `/analysis/distribution` take **`symbols`**
+  (plural, repeatable), not `symbol` — `symbol` returns 422.
+- `POST /backtest/optimize` with default params runs a full coarse+refine grid
+  that blows a 120 s timeout. Use
+  `{"symbol":"AAPL","train_days":30,"top_k":2,"refine_step_count":1}` (~24 s).
+  Response keys are `top_trials` / `all_trials` — there is no `trials` key.
+- `POST /backtest/compare` on NFLX/TSLA returns **400** "produces only 0
+  signal(s); need at least 5" — correct, those two have no overlapping
+  news+price dates.
+- Full healthy set: 15 endpoints, all 200. See `2026-09-03.md`.
+
 ## Posters / images
 - For non-technical overview posters, hand-author the HTML and render with
   Chrome headless — `ImageGen` garbles required copy.

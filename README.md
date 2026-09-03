@@ -3,7 +3,7 @@
 > **Can we extract sentiment from financial news and turn it into a measurable
 > market signal?**
 
-![Project overview: headlines in, evidence out](Project_Overview_final.png)
+![Project overview: headlines in, evidence out](Project_overview_final.png)
 
 
 Fetch financial news and prices from OpenBB (and Finnhub), score headlines with
