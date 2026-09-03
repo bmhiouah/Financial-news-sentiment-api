@@ -1,0 +1,29 @@
+# Secrets and machine-local config must never enter the build context.
+.env
+.env.*
+!.env.example
+
+# Version control and editor/tool state
+.git
+.gitignore
+.kilo
+.workbuddy-ai
+.codebuddy
+.idea
+.vscode
+.DS_Store
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+
+# Not needed to build or run the image
+docker-compose.yml
+Dockerfile
+.dockerignore
+README.md

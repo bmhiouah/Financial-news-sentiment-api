@@ -1,5 +1,11 @@
 # Financial Sentiment Pipeline
 
+> **Can we extract sentiment from financial news and turn it into a measurable
+> market signal?**
+
+![Project overview: headlines in, evidence out](Project_Overview_final.png)
+
+
 Fetch financial news and prices from OpenBB (and Finnhub), score headlines with
 FinBERT, store everything in PostgreSQL, and explore the results through a web UI
 and a REST API.
@@ -10,8 +16,21 @@ OpenBB / Finnhub  ->  news  ->  FinBERT sentiment  ->  PostgreSQL  ->  API + UI
 
 ## Quick start
 
+### With Docker (recommended)
+
+```bash
+cp .env.example .env        # optional: add GROQ_API_KEY
+docker compose up --build   # API on :8000, PostgreSQL on :5432
+```
+
+Open `http://127.0.0.1:8000/`. The database schema is created on startup, so
+there is no migration step. See [Docker](#docker) for details.
+
+### Without Docker
+
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-dev.txt   # adds the bundled local PostgreSQL
 
 # 1. point the app at a database (see "Database" below)
 echo "DATABASE_URL=postgresql://postgres:@/financial_sentiment?host=$HOME/.financial_sentiment/pgdata" > .env
@@ -27,10 +46,72 @@ python scripts/run_api.py          # http://127.0.0.1:8000
 python -m financial_sentiment.analysis
 ```
 
+## Docker
+
+`docker-compose.yml` runs two services: `db` (PostgreSQL 16) and `api` (this
+app, built from the `Dockerfile`).
+
+```bash
+docker compose up --build          # foreground
+docker compose up -d --build       # detached
+docker compose logs -f api
+docker compose down                # stop, keep the volumes
+docker compose down -v             # stop and delete the database
+```
+
+| | |
+|---|---|
+| UI | http://127.0.0.1:8000 |
+| API docs | http://127.0.0.1:8000/docs |
+| PostgreSQL | `localhost:5432` (`postgres` / `postgres` / `financial_sentiment`) |
+
+The same image is also the CLI and the maintenance scripts:
+
+```bash
+docker compose run --rm api financial-sentiment --help
+docker compose run --rm api financial-sentiment \
+    --symbols AAPL MSFT --start-date 2026-07-01 --end-date 2026-08-28 --analyze
+docker compose run --rm api python scripts/backfill_equities.py
+docker compose run --rm api python scripts/score_llm.py --limit 100
+```
+
+### Provider API keys
+
+OpenBB stores its keys in `~/.openbb_platform/user_settings.json` (`obb.user.credentials`),
+**not** in environment variables. Compose bind-mounts your host `~/.openbb_platform`
+into the container, so the keys you already configured work unchanged. Without
+that mount OpenBB starts with empty credentials: `yfinance` still works (it needs
+no key), but Finnhub/FMP/tiingo will fail and the pipeline reports them as warnings.
+
+To seed credentials inside a container instead, run once and follow the prompt:
+
+```bash
+docker compose run --rm api python -c "
+from openbb import obb
+obb.user.credentials.finnhub_api_key = 'your_key'
+obb.user.credentials.save()"
+```
+
+### Notes on the image
+
+- **CPU-only torch.** Torch is installed from `download.pytorch.org/whl/cpu`
+  first; pulling it from PyPI instead adds ~2 GB of unused CUDA libraries. Keep
+  the version in the Dockerfile in sync with `requirements.txt`.
+- **FinBERT weights** (~440 MB) download on the first scored headline and are
+  stored in the `hf-cache` volume, so they survive restarts. To pre-warm them:
+  `docker compose run --rm api python -c "from financial_sentiment.sentiment import FinBERTScorer; FinBERTScorer().score('warm up')"`.
+- The app runs as a non-root user (`app`, uid 10001).
+- `OPENBB_AUTO_BUILD=false` skips OpenBB's import-time package rebuild.
+- The container healthcheck hits `/pipeline/status`, which only answers once the
+  database is reachable and the schema exists.
+
 ## Database
 
 PostgreSQL is the only backend. The app needs nothing but a connection string,
 so it works against a local instance, Docker or a managed service.
+
+Under Docker the database comes from the `db` service. For local work without
+Docker, `scripts/pg_server.py` manages a bundled instance:
 
 ```bash
 python scripts/pg_server.py start     # prints the DATABASE_URL to put in .env
@@ -49,6 +130,9 @@ python main.py --symbols AAPL GOOGL --start-date 2026-07-01 --end-date 2026-08-2
 python main.py --symbols AAPL --start-date 2026-07-01 --end-date 2026-08-28 --analyze --source openbb
 python main.py --symbols AAPL --start-date 2026-07-01 --end-date 2026-08-28 --analyze \
     --source finnhub --finnhub-sources CNBC Reuters
+
+# after `pip install .` (or inside the container) the same CLI is installed as:
+financial-sentiment --symbols AAPL --start-date 2026-07-01 --end-date 2026-08-28 --analyze
 ```
 
 | Flag | Meaning |
@@ -93,7 +177,7 @@ interactive OpenAPI docs.
 | `POST` | `/pipeline/run` | Fetch + score for symbols and a date range |
 | `GET` | `/analysis/available-symbols` | Symbols with both prices and scored news |
 | `GET` | `/analysis/date-range` | Min/max date available |
-| `GET` | `/analysis/correlation` | Sentiment vs returns correlation per symbol |
+| `GET` | `/analysis/correlation` | Sentiment vs forward returns, per symbol |
 | `GET` | `/analysis/price-sentiment` | Price line + daily sentiment markers |
 | `GET` | `/analysis/finbert-vs-llm` | FinBERT vs LLM scores on the same headlines |
 | `GET` | `/analysis/distribution` | Sentiment x log-return heatmap + correlation bars |
@@ -124,7 +208,7 @@ src/financial_sentiment/
 ├── repository.py        # PostgreSQL schema and queries (the only SQL in the project)
 ├── pipeline.py          # orchestration: fetch -> score -> persist
 ├── cli.py               # argparse -> Pipeline
-├── analysis.py          # sentiment/return correlation
+├── analysis.py          # sentiment vs forward-return correlation
 ├── providers/           # data ingestion
 │   ├── base.py          # NewsProvider / PriceProvider contracts
 │   ├── openbb.py        # OpenBB news + prices (provider fallback list)
@@ -148,12 +232,15 @@ src/financial_sentiment/
     └── static/          # web UI
 
 scripts/
-├── pg_server.py         # start/stop the bundled local PostgreSQL
-├── run_api.py           # start the API
+├── pg_server.py         # start/stop the bundled local PostgreSQL (no Docker)
+├── run_api.py           # start the API (no Docker)
 ├── backfill_equities.py # populate the ticker universe
 └── score_llm.py         # backfill Groq LLM sentiment
 
-main.py                  # CLI entry point
+main.py                  # CLI entry point (`python main.py`)
+Dockerfile               # API + CLI image (CPU-only torch, non-root)
+docker-compose.yml       # api + PostgreSQL 16
+.dockerignore
 ```
 
 ## Programmatic use
@@ -239,10 +326,36 @@ empty entry means "let OpenBB pick its own priority".
 |---|---|
 | `news` | the articles that everything else reads |
 | `finnhub_news` | staging table; rows join `news` once scored |
-| `prices` | daily OHLCV + daily/weekly/monthly returns |
+| `prices` | daily OHLCV + forward daily/weekly/monthly returns |
 | `equities` | ticker universe used for symbol lookup |
 
 `news` and `finnhub_news` share one schema: `symbol`, `date`, `headline`, `text`,
 `source`, `url`, `sentiment_label`, `confidence`, `finbert_score`, and the five
 `llm_*` columns. Deduplication relies on unique indexes on `(symbol, url)` for
 news and `(symbol, date)` for prices.
+
+### Forward returns, not backward
+
+The `prices` table stores **forward** returns:
+
+```
+return[t] = (close[t + h] - close[t]) / close[t]      h = 1, 7, 30 calendar days
+```
+
+The whole point of the project is to ask whether news on date `t` says something
+about what the market does *after* `t`. A backward return
+(`close[t] - close[t-1]`) would instead compare news against a move that had
+already happened, which manufactures correlation that is not predictive.
+
+`t + h` resolves to the first trading day on or after that calendar date, so
+weekends and holidays land on the next session. Bars with no bar far enough in
+the future keep `NULL` returns — their future has not happened yet, and filling
+it in would be look-ahead bias.
+
+Returns are derived data, so they are recomputed from the stored closes rather
+than edited by hand:
+
+```bash
+python scripts/recompute_returns.py            # every symbol
+python scripts/recompute_returns.py AAPL MSFT  # only these
+```

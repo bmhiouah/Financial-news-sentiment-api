@@ -7,7 +7,13 @@ from typing import Any, Dict, List, Optional, Sequence
 from openbb import obb
 
 from ..config import SETTINGS
-from ..domain import NewsItem, PriceBar, SOURCE_OPENBB, coerce_date
+from ..domain import (
+    NewsItem,
+    PriceBar,
+    SOURCE_OPENBB,
+    add_forward_returns,
+    coerce_date,
+)
 from .base import NewsProvider, PriceProvider
 
 #: Entry meaning "let OpenBB apply its own provider priority order".
@@ -70,20 +76,6 @@ def _to_news_item(raw: Any, symbol: str) -> Optional[NewsItem]:
     )
 
 
-def _add_returns(bars: List[PriceBar]) -> List[PriceBar]:
-    """Fill daily/weekly/monthly returns from the ordered close prices."""
-    # `bars` is chronologically sorted, so positional lookups are the lags.
-    priced = [b for b in bars if b.close]
-    closes = [b.close for b in priced]
-    for index, bar in enumerate(priced):
-        for field, lag in (("daily_return", 1), ("weekly_return", 7),
-                           ("monthly_return", 30)):
-            if index < lag:
-                continue
-            previous = closes[index - lag]
-            if previous:
-                setattr(bar, field, (bar.close - previous) / previous)
-    return bars
 
 
 class OpenBBNewsProvider(NewsProvider):
@@ -184,8 +176,7 @@ class OpenBBPriceProvider(PriceProvider):
             )
             for row in _price_rows(getattr(response, "results", None))
         ]
-        bars.sort(key=lambda b: b.date)
-        return _add_returns(bars)
+        return add_forward_returns(bars)
 
 
 def _short(err: Exception, limit: int = 140) -> str:

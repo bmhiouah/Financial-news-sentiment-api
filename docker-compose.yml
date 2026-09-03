@@ -1,0 +1,58 @@
+name: financial-sentiment
+
+services:
+  # ---------------------------------------------------------------- database
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-financial_sentiment}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-financial_sentiment}
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 10
+    ports:
+      # Handy for psql / a GUI client. Change if 5432 is already taken.
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  # ---------------------------------------------------------------------- api
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Overrides the DATABASE_URL from .env, which points at the local
+      # (non-Docker) pgserver instance.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-financial_sentiment}
+      FINANCIAL_SENTIMENT_FINBERT_MODEL: ${FINANCIAL_SENTIMENT_FINBERT_MODEL:-ProsusAI/finbert}
+      FINANCIAL_SENTIMENT_POS_THRESHOLD: ${FINANCIAL_SENTIMENT_POS_THRESHOLD:-0.2}
+      FINANCIAL_SENTIMENT_NEG_THRESHOLD: ${FINANCIAL_SENTIMENT_NEG_THRESHOLD:--0.2}
+      FINANCIAL_SENTIMENT_PRICE_PROVIDERS: ${FINANCIAL_SENTIMENT_PRICE_PROVIDERS:-fmp,yfinance,tiingo}
+      FINANCIAL_SENTIMENT_NEWS_PROVIDERS: ${FINANCIAL_SENTIMENT_NEWS_PROVIDERS:-,yfinance}
+      # Optional: only needed by scripts/score_llm.py.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # FinBERT weights, downloaded once on the first scored headline.
+      - hf-cache:/home/app/.cache/huggingface
+      # OpenBB provider keys (Finnhub, FMP, tiingo, ...) live in the host's
+      # ~/.openbb_platform. Without this mount OpenBB starts with empty
+      # credentials and those providers fall back / fail.
+      - ${HOME}/.openbb_platform:/home/app/.openbb_platform
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  hf-cache:

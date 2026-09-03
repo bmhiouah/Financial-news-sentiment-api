@@ -1,11 +1,15 @@
 # OpenBB -> news -> FinBERT (and optionally a Groq LLM) -> PostgreSQL
-openbb==3.5.0
+#
+# The ML stack is pinned because transformers/torch/numpy/pandas are only
+# guaranteed to work in the combination listed here. Keep `torch` in sync with
+# the version installed in the Dockerfile (CPU wheel).
+openbb==4.7.2
 finnhub-python
 requests
 
 # Sentiment
-transformers
-torch
+transformers==4.49.0
+torch==2.13.0
 
 # Storage
 psycopg[binary]
@@ -15,8 +19,5 @@ fastapi
 uvicorn
 
 # Analysis / backtesting
-numpy
-pandas
-
-# Local PostgreSQL for development (scripts/pg_server.py)
-pgserver
+numpy==1.26.4
+pandas==2.2.2

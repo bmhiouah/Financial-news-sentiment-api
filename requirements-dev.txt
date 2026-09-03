@@ -3,3 +3,8 @@
 pytest
 pytest-cov
 ruff
+
+# Local PostgreSQL for `python scripts/pg_server.py`: the `pgserver` wheel ships
+# real PostgreSQL binaries, so it is a development convenience only. In Docker
+# the database comes from the official postgres image instead.
+pgserver

@@ -257,10 +257,16 @@ class Repository:
         ]
         if not rows:
             return 0
+        # Upsert, not DO NOTHING: a provider can correct a bar after the fact,
+        # and the return columns are derived from the closes, so they have to be
+        # rewritten together with the OHLC they depend on.
+        updates = ", ".join(
+            f"{c}=EXCLUDED.{c}" for c in _PRICES_COLUMNS if c not in ("symbol", "date")
+        )
         sql = (
             f"INSERT INTO {PRICES_TABLE} ({_sql_columns(_PRICES_COLUMNS)}) "
             f"VALUES ({', '.join(['%s'] * len(_PRICES_COLUMNS))}) "
-            f"ON CONFLICT (symbol, date) DO NOTHING"
+            f"ON CONFLICT (symbol, date) DO UPDATE SET {updates}"
         )
         with self.connection() as conn:
             cur = conn.cursor()
@@ -277,6 +283,21 @@ class Repository:
             rows = conn.cursor().execute(sql + " ORDER BY symbol, date",
                                          params).fetchall()
         return [PriceBar(*row) for row in rows]
+
+    def update_returns(self, bars: Iterable[PriceBar]) -> int:
+        """Rewrite only the three return columns, keyed by (symbol, date).
+
+        Used to recompute derived returns on rows that are already stored, for
+        example after the return definition changes.
+        """
+        return self._executemany(
+            f"UPDATE {PRICES_TABLE} SET daily_return=%s, weekly_return=%s, "
+            f"monthly_return=%s WHERE symbol=%s AND date=%s",
+            [
+                (b.daily_return, b.weekly_return, b.monthly_return, b.symbol, b.date)
+                for b in bars
+            ],
+        )
 
     # ---- coverage ----
 
