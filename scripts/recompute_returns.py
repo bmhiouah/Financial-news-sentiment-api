@@ -13,12 +13,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
 from collections import defaultdict
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+from _bootstrap import add_root_to_path
+
+add_root_to_path()
 
 from financial_sentiment.domain import RETURN_HORIZONS, add_forward_returns  # noqa: E402
 from financial_sentiment.repository import Repository  # noqa: E402

@@ -11,12 +11,11 @@ Set the API key once via either:
 from __future__ import annotations
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+from _bootstrap import add_root_to_path
+
+add_root_to_path()
 
 # Importing the package loads <project_root>/.env, so GROQ_API_KEY is in
 # os.environ by the time the scorer is constructed.

@@ -1,7 +1,6 @@
 # Secrets and machine-local config must never enter the build context.
 .env
 .env.*
-!.env.example
 
 # Version control and editor/tool state
 .git
@@ -24,6 +23,9 @@ venv/
 
 # Not needed to build or run the image
 docker-compose.yml
-Dockerfile
+config/Dockerfile
+config/env.example
 .dockerignore
 README.md
+docs/
+assets/

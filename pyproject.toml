@@ -7,6 +7,8 @@ name = "financial-sentiment"
 version = "0.1.0"
 description = "Financial news sentiment pipeline: OpenBB -> news -> FinBERT -> PostgreSQL."
 requires-python = ">=3.10"
+# Keep this list in sync with config/requirements.txt: Docker installs the
+# pinned runtime stack from that file, then runs `pip install --no-deps .`.
 dependencies = [
     "openbb==4.7.2",
     "finnhub-python",
@@ -31,11 +33,10 @@ dev = [
 [project.scripts]
 financial-sentiment = "financial_sentiment.cli:main"
 
+# Flat layout: the package sits at the project root, one level above its modules.
+# `include` keeps docs/, config/ and scripts/ out of the wheel.
 [tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-dir]
-"" = "src"
+include = ["financial_sentiment*"]
 
 [tool.setuptools.package-data]
 financial_sentiment = ["api/static/*"]

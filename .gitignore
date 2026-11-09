@@ -1,113 +1,43 @@
-# Byte-compiled / optimized / DLL files
+# Python bytecode and tool caches
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
 *.so
-.Python
-.workbuddy-ai/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
 
-# Distribution / packaging
-.Python
+# Build and packaging output
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-
-# PyInstaller
-  #  _pyinstaller
-
-# Installer logs
+.installed.cfg
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-manual_FUNC_test.log
-
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# ipython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
+# Local environment and secrets (never commit)
 .env
-.venv
+.env.*
+!.env.example
+.venv/
 env/
 venv/
-ENV/
-env.bak/
-venv.bak/
 
-# VS Code
+# Editor and OS files
+.idea/
 .vscode/
-
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Tool caches
-.codebuddy/
-.kilo/
-.workbuddy-ai/
-.ruff_cache/
-.pytest_cache/
-
-# IDE
-.idea/
 *.swp
 *.swo
+
+# Assistant / tool working directories (local notes, not source)
+.workbuddy-ai/
+.codebuddy/
+.kilo/

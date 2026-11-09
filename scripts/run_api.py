@@ -7,11 +7,10 @@ Usage:
     python scripts/run_api.py --reload   # dev mode with auto-reload
 """
 import argparse
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+from _bootstrap import ROOT, add_root_to_path
+
+add_root_to_path()
 
 
 def _check_database() -> None:
@@ -22,9 +21,9 @@ def _check_database() -> None:
     except Exception as exc:  # noqa: BLE001 - surface any connection error to user
         print("ERROR: could not connect to PostgreSQL.")
         print(f"  {exc}")
-        print("Set DATABASE_URL in .env (see README 'Database (PostgreSQL)'),")
+        print("Set DATABASE_URL in .env (see docs/database.md),")
         print("or start a local instance with: python scripts/pg_server.py start")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
 
 def main() -> None:
@@ -42,7 +41,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
-        app_dir=str(ROOT / "src"),
+        app_dir=str(ROOT),
     )
 
 

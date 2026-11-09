@@ -2,7 +2,7 @@
 #
 # Financial Sentiment Pipeline - API + CLI image.
 #
-#   docker build -t financial-sentiment .
+#   docker build -f config/Dockerfile -t financial-sentiment .
 #   docker compose up --build
 #
 # The image runs the FastAPI app (`/`, `/docs`, `/analysis.html`). The same image
@@ -27,11 +27,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first: this layer is cached and only rebuilds when
-# requirements.txt changes, not on every code edit.
-COPY requirements.txt ./
+# config/requirements.txt changes, not on every code edit. The manifest lands
+# as ./requirements.txt inside the image, so the pip command below is unchanged.
+COPY config/requirements.txt ./
 # CPU-only torch. Pulling torch from PyPI instead drags in ~2 GB of CUDA
 # libraries that a CPU-only inference container never uses. Keep the version in
-# sync with requirements.txt.
+# sync with config/requirements.txt.
 RUN pip install "torch==2.13.0" --index-url https://download.pytorch.org/whl/cpu \
  && pip install -r requirements.txt
 
@@ -41,13 +42,13 @@ RUN pip install "torch==2.13.0" --index-url https://download.pytorch.org/whl/cpu
 # at runtime as "'App' object has no attribute 'news'".
 RUN python -c "from openbb import obb; assert hasattr(obb, 'news'); assert hasattr(obb, 'equity')"
 
-# Install the package itself. --no-deps because requirements.txt already pinned
+# Install the package itself. --no-deps because config/requirements.txt already pinned
 # the runtime dependencies, and re-resolving them here could upgrade torch back
-# to the CUDA build.
+# to the CUDA build. The installed `financial-sentiment` console script is the
+# image's CLI; scripts/ also holds a launcher for running from a plain checkout.
 COPY pyproject.toml ./
-COPY src ./src
+COPY financial_sentiment ./financial_sentiment
 COPY scripts ./scripts
-COPY main.py ./
 RUN pip install --no-deps .
 
 # The command tree is baked into the image now, so stop OpenBB from trying to

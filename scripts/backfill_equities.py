@@ -11,12 +11,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+from _bootstrap import add_root_to_path
+
+add_root_to_path()
 
 from openbb import obb  # noqa: E402
 

@@ -16,13 +16,12 @@ Commands:
 """
 import argparse
 import os
-import sys
 from pathlib import Path
 
+from _bootstrap import add_root_to_path
+
 # Allow running as `python scripts/pg_server.py` from the project root.
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT / "src") not in sys.path:
-    sys.path.insert(0, str(ROOT / "src"))
+add_root_to_path()
 
 import pgserver  # noqa: E402
 import psycopg    # noqa: E402

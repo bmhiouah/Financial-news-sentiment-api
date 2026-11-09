@@ -27,7 +27,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: config/Dockerfile
     restart: unless-stopped
     environment:
       # Overrides the DATABASE_URL from .env, which points at the local
